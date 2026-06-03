@@ -2,3 +2,5 @@
 /foss/
 /gplay/
 /.cxx/
+# Whisper transcription model — downloaded at build time, not committed (too large for git/LFS-on-fork).
+/src/main/assets/models/*.bin
