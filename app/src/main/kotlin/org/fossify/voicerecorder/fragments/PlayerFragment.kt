@@ -11,9 +11,17 @@ import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.BackgroundColorSpan
+import android.text.style.ClickableSpan
 import android.util.AttributeSet
+import android.view.View
 import android.widget.SeekBar
 import androidx.core.net.toUri
+import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
 import org.fossify.commons.extensions.beGone
@@ -44,6 +52,7 @@ import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
 import org.fossify.voicerecorder.models.TRANSCRIPT_FAILED
 import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
 import org.fossify.voicerecorder.models.Transcript
+import org.fossify.voicerecorder.models.Word
 import org.fossify.voicerecorder.transcription.WhisperLanguages
 import org.fossify.voicerecorder.receivers.BecomingNoisyReceiver
 import org.greenrobot.eventbus.EventBus
@@ -60,10 +69,19 @@ class PlayerFragment(
 
     companion object {
         private const val FAST_FORWARD_SKIP_MS = 10000
+        private const val WORD_HIGHLIGHT_INTERVAL_MS = 80L
+        private const val MS_PER_SECOND = 1000
+        private const val MARKER_ALPHA = 0.4f
     }
 
     private var player: MediaPlayer? = null
     private var progressTimer = Timer()
+    private var wordTimer = Timer()
+    private var words: List<Word> = emptyList()
+    private var wordRanges: List<IntRange> = emptyList()
+    private var transcriptSpannable: Spannable? = null
+    private var wordHighlightSpan: BackgroundColorSpan? = null
+    private var highlightedWordIndex = -1
     private var playedRecordingIDs = Stack<Int>()
     private var itemsIgnoringSearch = ArrayList<Recording>()
     private var lastSearchQuery = ""
@@ -102,6 +120,7 @@ class PlayerFragment(
 
         bus?.unregister(this)
         progressTimer.cancel()
+        stopWordTimer()
     }
 
     override fun onAttachedToWindow() {
@@ -268,6 +287,7 @@ class PlayerFragment(
 
             setOnCompletionListener {
                 progressTimer.cancel()
+                stopWordTimer()
                 unregisterNoisyAudioReceiver()
                 binding.playerProgressbar.progress = binding.playerProgressbar.max
                 binding.playerProgressCurrent.text = binding.playerProgressMax.text
@@ -385,6 +405,7 @@ class PlayerFragment(
         player?.pause()
         binding.playPauseBtn.setImageDrawable(getToggleButtonIcon(false))
         progressTimer.cancel()
+        stopWordTimer()
     }
 
     private fun resumePlayback() {
@@ -392,6 +413,7 @@ class PlayerFragment(
         player?.start()
         binding.playPauseBtn.setImageDrawable(getToggleButtonIcon(true))
         setupProgressTimer()
+        startWordTimer()
     }
 
     private fun getToggleButtonIcon(isPlaying: Boolean): Drawable {
@@ -484,12 +506,36 @@ class PlayerFragment(
     }
 
     private fun updateTranscriptUi(transcript: Transcript?) {
+        stopWordTimer()
+        clearWordState()
         if (transcript == null) {
             binding.transcriptPanel.beGone()
             return
         }
 
         binding.transcriptPanel.beVisible()
+        val showLanguage = transcript.status == TRANSCRIPT_DONE && transcript.language.isNotBlank()
+        binding.transcriptLanguage.beVisibleIf(showLanguage)
+        if (showLanguage) {
+            binding.transcriptLanguage.text = WhisperLanguages.nameOf(transcript.language)
+        }
+
+        val wordList = if (transcript.status == TRANSCRIPT_DONE) {
+            Word.fromJson(transcript.wordsJson)
+        } else {
+            emptyList()
+        }
+
+        if (wordList.isNotEmpty()) {
+            showReadAlong(wordList)
+            if (getIsPlaying()) {
+                startWordTimer()
+            }
+            return
+        }
+
+        // No word timeline (processing/failed/old transcript): plain, non-interactive text.
+        binding.transcriptView.movementMethod = null
         binding.transcriptView.text = when (transcript.status) {
             TRANSCRIPT_PROCESSING -> context.getString(R.string.transcribing)
             TRANSCRIPT_FAILED -> context.getString(R.string.transcription_failed)
@@ -499,12 +545,115 @@ class PlayerFragment(
 
             else -> context.getString(R.string.no_transcript_yet)
         }
+    }
 
-        val showLanguage = transcript.status == TRANSCRIPT_DONE && transcript.language.isNotBlank()
-        binding.transcriptLanguage.beVisibleIf(showLanguage)
-        if (showLanguage) {
-            binding.transcriptLanguage.text = WhisperLanguages.nameOf(transcript.language)
+    private fun clearWordState() {
+        words = emptyList()
+        wordRanges = emptyList()
+        transcriptSpannable = null
+        wordHighlightSpan = null
+        highlightedWordIndex = -1
+    }
+
+    // Renders the transcript with each word tappable (seek) and tracked for highlighting.
+    private fun showReadAlong(wordList: List<Word>) {
+        val builder = SpannableStringBuilder()
+        val ranges = ArrayList<IntRange>(wordList.size)
+        wordList.forEachIndexed { index, word ->
+            val rawStart = builder.length
+            builder.append(word.text)
+            val visibleStart = rawStart + word.text.takeWhile { it == ' ' }.length
+            val visibleEnd = builder.length
+            ranges.add(visibleStart until visibleEnd)
+            if (visibleEnd > visibleStart) {
+                builder.setSpan(
+                    object : ClickableSpan() {
+                        override fun onClick(widget: View) = seekToWord(index)
+                        override fun updateDrawState(ds: TextPaint) {
+                            ds.isUnderlineText = false
+                        }
+                    },
+                    visibleStart, visibleEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
         }
+
+        words = wordList
+        wordRanges = ranges
+        transcriptSpannable = builder
+        binding.transcriptView.movementMethod = LinkMovementMethod.getInstance()
+        binding.transcriptView.text = builder
+    }
+
+    private fun seekToWord(index: Int) {
+        val word = words.getOrNull(index) ?: return
+        player?.seekTo(word.startMs.toInt())
+        val seconds = (word.startMs / MS_PER_SECOND).toInt()
+        binding.playerProgressbar.progress = seconds
+        binding.playerProgressCurrent.text = seconds.getFormattedDuration()
+        resumePlayback()
+    }
+
+    private fun startWordTimer() {
+        if (words.isEmpty()) {
+            return
+        }
+        wordTimer.cancel()
+        wordTimer = Timer()
+        wordTimer.scheduleAtFixedRate(object : TimerTask() {
+            override fun run() {
+                Handler(Looper.getMainLooper()).post { updateWordHighlight() }
+            }
+        }, 0, WORD_HIGHLIGHT_INTERVAL_MS)
+    }
+
+    private fun stopWordTimer() {
+        wordTimer.cancel()
+    }
+
+    private fun updateWordHighlight() {
+        val currentPlayer = player ?: return
+        val spannable = transcriptSpannable ?: return
+        val index = currentWordIndex(currentPlayer.currentPosition.toLong())
+        if (index == highlightedWordIndex) {
+            return
+        }
+
+        wordHighlightSpan?.let { spannable.removeSpan(it) }
+        highlightedWordIndex = index
+        if (index >= 0) {
+            val range = wordRanges[index]
+            val markerColor = context.getProperPrimaryColor().adjustAlpha(MARKER_ALPHA)
+            val span = BackgroundColorSpan(markerColor)
+            spannable.setSpan(span, range.first, range.last + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            wordHighlightSpan = span
+            autoScrollToWord(range.first)
+        } else {
+            wordHighlightSpan = null
+        }
+        binding.transcriptView.text = spannable
+    }
+
+    // Index of the latest word that has started by [positionMs], or -1 before the first.
+    private fun currentWordIndex(positionMs: Long): Int {
+        var index = -1
+        for (i in words.indices) {
+            if (words[i].startMs <= positionMs) {
+                index = i
+            } else {
+                break
+            }
+        }
+        return index
+    }
+
+    private fun autoScrollToWord(charOffset: Int) {
+        val layout = binding.transcriptView.layout ?: return
+        val line = layout.getLineForOffset(charOffset)
+        val targetY = binding.transcriptView.top +
+            binding.transcriptView.paddingTop + layout.getLineTop(line)
+        val panelHeight = binding.transcriptPanel.height
+        binding.transcriptPanel.smoothScrollTo(0, (targetY - panelHeight / 2).coerceAtLeast(0))
     }
 
     private fun registerNoisyAudioReceiver() {

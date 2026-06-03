@@ -16,4 +16,6 @@ data class Transcript(
     val status: String,
     val language: String,
     val createdAt: Long,
+    // JSON-encoded word timeline (see Word) for read-along playback; "" when absent.
+    val wordsJson: String = "",
 )

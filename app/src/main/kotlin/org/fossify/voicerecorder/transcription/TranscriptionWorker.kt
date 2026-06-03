@@ -16,6 +16,7 @@ import org.fossify.voicerecorder.models.TRANSCRIPT_FAILED
 import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Transcript
+import org.fossify.voicerecorder.models.Word
 import org.greenrobot.eventbus.EventBus
 
 class TranscriptionWorker(
@@ -28,7 +29,7 @@ class TranscriptionWorker(
         val name = inputData.getString(KEY_NAME) ?: return Result.failure()
         val dao = TranscriptDatabase.getInstance(applicationContext).transcriptDao()
 
-        fun publish(text: String, status: String, language: String = "") {
+        fun publish(text: String, status: String, language: String = "", wordsJson: String = "") {
             dao.upsert(
                 Transcript(
                     recordingName = name,
@@ -36,6 +37,7 @@ class TranscriptionWorker(
                     status = status,
                     language = language,
                     createdAt = System.currentTimeMillis(),
+                    wordsJson = wordsJson,
                 )
             )
             EventBus.getDefault().post(Events.TranscriptionUpdated(name))
@@ -48,10 +50,15 @@ class TranscriptionWorker(
 
             val whisper = TranscriptionEngine.getContext(applicationContext)
             val language = applicationContext.config.transcriptionLanguage
-            val text = whisper.transcribeData(audio, language = language, printTimestamp = false)
-                .trim()
+            val result = whisper.transcribeWithWords(audio, language = language)
+            val words = result.words.map { Word(it.text, it.startMs, it.endMs) }
 
-            publish(text = text, status = TRANSCRIPT_DONE, language = language)
+            publish(
+                text = result.text,
+                status = TRANSCRIPT_DONE,
+                language = language,
+                wordsJson = Word.toJson(words),
+            )
             Result.success()
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             Log.e(TAG, "Transcription failed for $name", e)

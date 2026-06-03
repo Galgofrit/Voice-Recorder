@@ -184,6 +184,7 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
     params.offset_ms = 0;
     params.no_context = true;
     params.single_segment = false;
+    params.token_timestamps = true; // per-token t0/t1 for word-level read-along
 
     whisper_reset_timings(context);
 
@@ -276,6 +277,51 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTextSegmentT1(
     UNUSED(thiz);
     struct whisper_context *context = (struct whisper_context *) context_ptr;
     return whisper_full_get_segment_t1(context, index);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenCount(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment) {
+    UNUSED(env);
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    return whisper_full_n_tokens(context, segment);
+}
+
+// Returns the raw bytes of a token's text. We return bytes (not a jstring) because
+// a single whisper token can be a partial UTF-8 sequence (common in CJK); passing
+// that to NewStringUTF aborts the process. The caller reassembles + decodes per word.
+JNIEXPORT jbyteArray JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenBytes(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment, jint token) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    const char *text = whisper_full_get_token_text(context, segment, token);
+    if (text == NULL) {
+        text = "";
+    }
+    jsize length = (jsize) strlen(text);
+    jbyteArray array = (*env)->NewByteArray(env, length);
+    (*env)->SetByteArrayRegion(env, array, 0, length, (const jbyte *) text);
+    return array;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenT0(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment, jint token) {
+    UNUSED(env);
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    return whisper_full_get_token_data(context, segment, token).t0;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenT1(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment, jint token) {
+    UNUSED(env);
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    return whisper_full_get_token_data(context, segment, token).t1;
 }
 
 JNIEXPORT jstring JNICALL
