@@ -7,6 +7,8 @@ import androidx.core.content.edit
 import org.fossify.commons.helpers.BaseConfig
 import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.extensions.getDefaultRecordingsFolder
+import org.fossify.voicerecorder.transcription.WhisperLanguages
+import java.util.Locale
 
 class Config(context: Context) : BaseConfig(context) {
     companion object {
@@ -104,4 +106,15 @@ class Config(context: Context) : BaseConfig(context) {
     var autoTranscribe: Boolean
         get() = prefs.getBoolean(AUTO_TRANSCRIBE, true)
         set(autoTranscribe) = prefs.edit { putBoolean(AUTO_TRANSCRIBE, autoTranscribe) }
+
+    // The single language recordings are transcribed in (a whisper language code).
+    var transcriptionLanguage: String
+        get() = prefs.getString(TRANSCRIPTION_LANGUAGE, null) ?: defaultTranscriptionLanguage()
+        set(value) = prefs.edit { putString(TRANSCRIPTION_LANGUAGE, value) }
+
+    private fun defaultTranscriptionLanguage(): String {
+        val deviceLanguage = Locale.getDefault().language
+        val supported = WhisperLanguages.ALL.map { it.first }.toSet()
+        return if (deviceLanguage in supported) deviceLanguage else "en"
+    }
 }

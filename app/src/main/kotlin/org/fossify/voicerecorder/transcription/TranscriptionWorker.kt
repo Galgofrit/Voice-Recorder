@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import org.fossify.voicerecorder.databases.TranscriptDatabase
+import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
 import org.fossify.voicerecorder.models.TRANSCRIPT_FAILED
 import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
@@ -27,13 +28,13 @@ class TranscriptionWorker(
         val name = inputData.getString(KEY_NAME) ?: return Result.failure()
         val dao = TranscriptDatabase.getInstance(applicationContext).transcriptDao()
 
-        fun publish(text: String, status: String) {
+        fun publish(text: String, status: String, language: String = "") {
             dao.upsert(
                 Transcript(
                     recordingName = name,
                     text = text,
                     status = status,
-                    language = TranscriptionEngine.LANGUAGE,
+                    language = language,
                     createdAt = System.currentTimeMillis(),
                 )
             )
@@ -46,9 +47,11 @@ class TranscriptionWorker(
             check(audio.isNotEmpty()) { "Decoded audio is empty" }
 
             val whisper = TranscriptionEngine.getContext(applicationContext)
-            val text = whisper.transcribeData(audio, printTimestamp = false).trim()
+            val language = applicationContext.config.transcriptionLanguage
+            val text = whisper.transcribeData(audio, language = language, printTimestamp = false)
+                .trim()
 
-            publish(text = text, status = TRANSCRIPT_DONE)
+            publish(text = text, status = TRANSCRIPT_DONE, language = language)
             Result.success()
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             Log.e(TAG, "Transcription failed for $name", e)

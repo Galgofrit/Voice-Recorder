@@ -40,6 +40,7 @@
     <string name="transcribing">Transcribing…</string>
     <string name="transcription_failed">Transcription failed</string>
     <string name="no_transcript_yet">No transcript yet</string>
+    <string name="transcription_languages">Transcription language</string>
     <!-- Settings Microphone mode selection -->
     <string name="microphone_mode_camcorder">Camera (video)</string>
     <string name="microphone_mode_voice_communication">Voice communication (auto gain)</string>

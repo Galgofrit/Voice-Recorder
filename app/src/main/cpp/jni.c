@@ -163,11 +163,14 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_freeContext(
 
 JNIEXPORT void JNICALL
 Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
-        JNIEnv *env, jobject thiz, jlong context_ptr, jint num_threads, jfloatArray audio_data) {
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint num_threads, jfloatArray audio_data,
+        jstring language) {
     UNUSED(thiz);
     struct whisper_context *context = (struct whisper_context *) context_ptr;
     jfloat *audio_data_arr = (*env)->GetFloatArrayElements(env, audio_data, NULL);
     const jsize audio_data_length = (*env)->GetArrayLength(env, audio_data);
+    // Kept valid until after whisper_full returns, since params.language points at it.
+    const char *language_chars = (*env)->GetStringUTFChars(env, language, NULL);
 
     // The below adapted from the Objective-C iOS sample
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
@@ -176,7 +179,7 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
     params.print_timestamps = true;
     params.print_special = false;
     params.translate = false;
-    params.language = "en";
+    params.language = language_chars;
     params.n_threads = num_threads;
     params.offset_ms = 0;
     params.no_context = true;
@@ -184,13 +187,60 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
 
     whisper_reset_timings(context);
 
-    LOGI("About to run whisper_full");
+    LOGI("About to run whisper_full (lang=%s)", language_chars);
     if (whisper_full(context, params, audio_data_arr, audio_data_length) != 0) {
         LOGI("Failed to run the model");
     } else {
         whisper_print_timings(context);
     }
+    (*env)->ReleaseStringUTFChars(env, language, language_chars);
     (*env)->ReleaseFloatArrayElements(env, audio_data, audio_data_arr, JNI_ABORT);
+}
+
+// Detects the spoken language, optionally restricted to a candidate set.
+// Returns the best language code (e.g. "en"); "" on failure.
+JNIEXPORT jstring JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_detectLanguage(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint num_threads, jfloatArray audio_data,
+        jobjectArray candidates) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    jfloat *audio_data_arr = (*env)->GetFloatArrayElements(env, audio_data, NULL);
+    const jsize audio_data_length = (*env)->GetArrayLength(env, audio_data);
+
+    int best_id = -1;
+    const int n_langs = whisper_lang_max_id() + 1;
+    float *probs = (float *) malloc(sizeof(float) * n_langs);
+
+    if (probs != NULL &&
+        whisper_pcm_to_mel(context, audio_data_arr, audio_data_length, num_threads) == 0) {
+        const int top_id = whisper_lang_auto_detect(context, 0, num_threads, probs);
+        const jsize n_candidates = candidates == NULL
+                ? 0 : (*env)->GetArrayLength(env, candidates);
+
+        if (n_candidates == 0) {
+            best_id = top_id;
+        } else {
+            float best_prob = -1.0f;
+            for (jsize i = 0; i < n_candidates; i++) {
+                jstring code = (jstring) (*env)->GetObjectArrayElement(env, candidates, i);
+                const char *code_chars = (*env)->GetStringUTFChars(env, code, NULL);
+                const int id = whisper_lang_id(code_chars);
+                if (id >= 0 && id < n_langs && probs[id] > best_prob) {
+                    best_prob = probs[id];
+                    best_id = id;
+                }
+                (*env)->ReleaseStringUTFChars(env, code, code_chars);
+                (*env)->DeleteLocalRef(env, code);
+            }
+        }
+    }
+
+    free(probs);
+    (*env)->ReleaseFloatArrayElements(env, audio_data, audio_data_arr, JNI_ABORT);
+
+    const char *result = best_id >= 0 ? whisper_lang_str(best_id) : "";
+    return (*env)->NewStringUTF(env, result == NULL ? "" : result);
 }
 
 JNIEXPORT jint JNICALL

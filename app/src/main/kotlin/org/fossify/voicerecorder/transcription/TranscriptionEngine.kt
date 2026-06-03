@@ -11,8 +11,10 @@ import java.io.File
  * The model ships in assets and is copied to filesDir once so whisper can mmap it.
  */
 object TranscriptionEngine {
-    const val LANGUAGE = "en"
-    private const val MODEL_ASSET = "models/ggml-tiny.en.bin"
+    // Multilingual quantized "small" model (~99 languages) — higher accuracy
+    // (notably for lower-resource languages), still fast on a modern device.
+    private const val MODEL_NAME = "ggml-small-q5_1.bin"
+    private const val MODEL_ASSET = "models/$MODEL_NAME"
 
     private val mutex = Mutex()
     private var context: WhisperContext? = null
@@ -26,7 +28,7 @@ object TranscriptionEngine {
 
     private fun ensureModel(appContext: Context): File {
         val outDir = File(appContext.filesDir, "models").apply { mkdirs() }
-        val outFile = File(outDir, "ggml-tiny.en.bin")
+        val outFile = File(outDir, MODEL_NAME)
 
         val expectedSize = appContext.assets.openFd(MODEL_ASSET).use { it.length }
         if (outFile.exists() && outFile.length() == expectedSize) {

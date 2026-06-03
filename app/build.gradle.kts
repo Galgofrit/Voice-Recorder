@@ -43,6 +43,18 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
+
+        externalNativeBuild {
+            cmake {
+                // Force optimization for the whisper/ggml native code even in debug
+                // builds. Without this, ggml compiles at -O0 and transcription is
+                // roughly 10x slower (a 4s clip can take a minute).
+                arguments += listOf(
+                    "-DCMAKE_C_FLAGS_DEBUG=-O3 -DNDEBUG",
+                    "-DCMAKE_CXX_FLAGS_DEBUG=-O3 -DNDEBUG"
+                )
+            }
+        }
     }
 
     signingConfigs {

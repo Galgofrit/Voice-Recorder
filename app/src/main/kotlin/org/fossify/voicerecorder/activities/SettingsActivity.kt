@@ -40,6 +40,7 @@ import org.fossify.voicerecorder.helpers.EXTENSION_OGG
 import org.fossify.voicerecorder.helpers.SAMPLING_RATES
 import org.fossify.voicerecorder.helpers.SAMPLING_RATE_BITRATE_LIMITS
 import org.fossify.voicerecorder.models.Events
+import org.fossify.voicerecorder.transcription.WhisperLanguages
 import org.greenrobot.eventbus.EventBus
 import java.util.Locale
 import kotlin.math.abs
@@ -76,6 +77,7 @@ class SettingsActivity : SimpleActivity() {
         setupRecordAfterLaunch()
         setupKeepScreenOn()
         setupAutoTranscribe()
+        setupTranscriptionLanguages()
         setupUseRecycleBin()
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsNestedScrollview)
@@ -289,6 +291,26 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsAutoTranscribeHolder.setOnClickListener {
             binding.settingsAutoTranscribe.toggle()
             config.autoTranscribe = binding.settingsAutoTranscribe.isChecked
+        }
+    }
+
+    private fun setupTranscriptionLanguages() {
+        binding.settingsTranscriptionLanguages.text =
+            WhisperLanguages.nameOf(config.transcriptionLanguage)
+        binding.settingsTranscriptionLanguagesHolder.setOnClickListener {
+            val languages = WhisperLanguages.SORTED_BY_NAME
+            val items = ArrayList(languages.mapIndexed { index, (code, name) ->
+                RadioItem(index, name, code)
+            })
+            val currentIndex = languages
+                .indexOfFirst { it.first == config.transcriptionLanguage }
+                .coerceAtLeast(0)
+
+            RadioGroupDialog(this@SettingsActivity, items, currentIndex) {
+                config.transcriptionLanguage = it as String
+                binding.settingsTranscriptionLanguages.text =
+                    WhisperLanguages.nameOf(config.transcriptionLanguage)
+            }
         }
     }
 

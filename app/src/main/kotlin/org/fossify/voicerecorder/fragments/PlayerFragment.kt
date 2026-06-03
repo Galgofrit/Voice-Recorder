@@ -44,6 +44,7 @@ import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
 import org.fossify.voicerecorder.models.TRANSCRIPT_FAILED
 import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
 import org.fossify.voicerecorder.models.Transcript
+import org.fossify.voicerecorder.transcription.WhisperLanguages
 import org.fossify.voicerecorder.receivers.BecomingNoisyReceiver
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -470,6 +471,12 @@ class PlayerFragment(
             }
 
             else -> context.getString(R.string.no_transcript_yet)
+        }
+
+        val showLanguage = transcript.status == TRANSCRIPT_DONE && transcript.language.isNotBlank()
+        binding.transcriptLanguage.beVisibleIf(showLanguage)
+        if (showLanguage) {
+            binding.transcriptLanguage.text = WhisperLanguages.nameOf(transcript.language)
         }
     }
 
