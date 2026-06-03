@@ -2,11 +2,16 @@ package org.fossify.voicerecorder.adapters
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.BackgroundColorSpan
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
+import org.fossify.commons.extensions.adjustAlpha
+import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.formatDate
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getFormattedDuration
@@ -43,6 +48,12 @@ class RecordingsAdapter(
     RecyclerViewFastScroller.OnPopupTextUpdate {
 
     var currRecordingId = 0
+
+    // Active search query and a map of recording name -> full transcript text,
+    // used to highlight matches and show a transcript snippet under each result.
+    var textToHighlight = ""
+    var transcripts: Map<String, String> = emptyMap()
+    private var lastHighlight = ""
 
     init {
         setupDragListener(true)
@@ -126,8 +137,11 @@ class RecordingsAdapter(
 
     @SuppressLint("NotifyDataSetChanged")
     fun updateItems(newItems: ArrayList<Recording>) {
-        if (newItems.hashCode() != recordings.hashCode()) {
+        // Also rebind when only the search highlight changed (the result set can stay
+        // identical across keystrokes, e.g. "fo" -> "fox" both matching one recording).
+        if (newItems.hashCode() != recordings.hashCode() || textToHighlight != lastHighlight) {
             recordings = newItems
+            lastHighlight = textToHighlight
             notifyDataSetChanged()
             finishActMode()
         }
@@ -265,25 +279,81 @@ class RecordingsAdapter(
             root.setupViewBackground(activity)
             recordingFrame.isSelected = selectedKeys.contains(recording.id)
 
+            val primaryColor = activity.getProperPrimaryColor()
             arrayListOf(
                 recordingTitle,
                 recordingDate,
                 recordingDuration,
-                recordingSize
+                recordingSize,
+                recordingTranscriptSnippet
             ).forEach {
                 it.setTextColor(textColor)
             }
 
             if (recording.id == currRecordingId) {
-                recordingTitle.setTextColor(root.context.getProperPrimaryColor())
+                recordingTitle.setTextColor(primaryColor)
             }
 
-            recordingTitle.text = recording.title
+            val markerColor = primaryColor.adjustAlpha(MARKER_ALPHA)
+            recordingTitle.text = highlightMatches(recording.title, textToHighlight, markerColor)
             recordingDate.text = recording.timestamp.formatDate(root.context)
             recordingDuration.text = recording.duration.getFormattedDuration()
             recordingSize.text = recording.size.formatSize()
+
+            val snippet = transcriptSnippet(recording.title, textToHighlight, markerColor)
+            recordingTranscriptSnippet.beVisibleIf(snippet != null)
+            if (snippet != null) {
+                recordingTranscriptSnippet.text = snippet
+            }
         }
     }
 
+    // Builds a snippet of the transcript around the matched query (marker-highlighted),
+    // or null when there's no transcript match to show.
+    private fun transcriptSnippet(name: String, query: String, markerColor: Int): CharSequence? {
+        if (query.isEmpty()) {
+            return null
+        }
+
+        val text = transcripts[name] ?: return null
+        val matchIndex = text.indexOf(query, ignoreCase = true)
+        if (matchIndex < 0) {
+            return null
+        }
+
+        val start = (matchIndex - SNIPPET_CHARS_BEFORE).coerceAtLeast(0)
+        val end = (matchIndex + query.length + SNIPPET_CHARS_AFTER).coerceAtMost(text.length)
+        val prefix = if (start > 0) "…" else ""
+        val suffix = if (end < text.length) "…" else ""
+        return highlightMatches(prefix + text.substring(start, end) + suffix, query, markerColor)
+    }
+
+    // Marker-style highlight: a translucent background behind every occurrence of
+    // [query], leaving the text color itself unchanged.
+    private fun highlightMatches(text: String, query: String, markerColor: Int): SpannableString {
+        val spannable = SpannableString(text)
+        if (query.isEmpty()) {
+            return spannable
+        }
+
+        var index = text.indexOf(query, ignoreCase = true)
+        while (index >= 0) {
+            spannable.setSpan(
+                BackgroundColorSpan(markerColor),
+                index,
+                index + query.length,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            index = text.indexOf(query, startIndex = index + query.length, ignoreCase = true)
+        }
+        return spannable
+    }
+
     override fun onChange(position: Int) = recordings.getOrNull(position)?.title ?: ""
+
+    companion object {
+        private const val SNIPPET_CHARS_BEFORE = 30
+        private const val SNIPPET_CHARS_AFTER = 60
+        private const val MARKER_ALPHA = 0.4f
+    }
 }

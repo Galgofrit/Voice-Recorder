@@ -72,6 +72,7 @@ class PlayerFragment(
     private var prevRecycleBinState = context.config.useRecycleBin
     private var playOnPreparation = true
     private var currentRecordingName = ""
+    private var transcriptsByName = HashMap<String, String>()
     private lateinit var binding: FragmentPlayerBinding
 
     private var becomingNoisyReceiver: BecomingNoisyReceiver? = null
@@ -128,6 +129,24 @@ class PlayerFragment(
         binding.recordingsPlaceholder.beVisibleIf(recordings.isEmpty())
         itemsIgnoringSearch = recordings
         setupAdapter(itemsIgnoringSearch)
+        loadTranscriptsForSearch()
+    }
+
+    // Cache of completed transcript text keyed by recording name, so search can
+    // match transcript content without hitting the database on every keystroke.
+    private fun loadTranscriptsForSearch() {
+        ensureBackgroundThread {
+            val map = TranscriptDatabase.getInstance(context)
+                .transcriptDao()
+                .getByStatus(TRANSCRIPT_DONE)
+                .associate { it.recordingName to it.text }
+            (context as SimpleActivity).runOnUiThread {
+                transcriptsByName = HashMap(map)
+                if (lastSearchQuery.isNotEmpty()) {
+                    onSearchTextChanged(lastSearchQuery)
+                }
+            }
+        }
     }
 
     private fun setupViews() {
@@ -222,6 +241,8 @@ class PlayerFragment(
                     playedRecordingIDs.push(it.id)
                 }
             }.apply {
+                textToHighlight = lastSearchQuery
+                transcripts = transcriptsByName
                 binding.recordingsList.adapter = this
             }
 
@@ -229,6 +250,8 @@ class PlayerFragment(
                 binding.recordingsList.scheduleLayoutAnimation()
             }
         } else {
+            adapter.textToHighlight = lastSearchQuery
+            adapter.transcripts = transcriptsByName
             adapter.updateItems(recordings)
         }
     }
@@ -341,7 +364,10 @@ class PlayerFragment(
     fun onSearchTextChanged(text: String) {
         lastSearchQuery = text
         val filtered = itemsIgnoringSearch
-            .filter { it.title.contains(text, true) }
+            .filter {
+                it.title.contains(text, true) ||
+                    transcriptsByName[it.title]?.contains(text, true) == true
+            }
             .toMutableList() as ArrayList<Recording>
         setupAdapter(filtered)
     }
@@ -441,6 +467,7 @@ class PlayerFragment(
         if (event.recordingName == currentRecordingName) {
             loadTranscript(currentRecordingName)
         }
+        loadTranscriptsForSearch()
     }
 
     private fun loadTranscript(recordingName: String) {

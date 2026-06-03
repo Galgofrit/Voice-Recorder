@@ -10,6 +10,9 @@ interface TranscriptDao {
     @Query("SELECT * FROM transcripts WHERE recordingName = :name")
     fun get(name: String): Transcript?
 
+    @Query("SELECT * FROM transcripts WHERE status = :status")
+    fun getByStatus(status: String): List<Transcript>
+
     @Upsert
     fun upsert(transcript: Transcript)
 
