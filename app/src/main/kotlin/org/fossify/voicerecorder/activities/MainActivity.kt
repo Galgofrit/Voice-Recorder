@@ -2,21 +2,18 @@ package org.fossify.voicerecorder.activities
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.provider.MediaStore
-import android.widget.ImageView
-import android.widget.TextView
-import androidx.appcompat.content.res.AppCompatResources
-import me.grantland.widget.AutofitHelper
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.appLaunched
+import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkAppSideloading
-import org.fossify.commons.extensions.getBottomNavigationBackgroundColor
+import org.fossify.commons.extensions.getContrastColor
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.hideKeyboard
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
-import org.fossify.commons.extensions.onPageChangeListener
-import org.fossify.commons.extensions.onTabSelectionChanged
 import org.fossify.commons.extensions.toast
-import org.fossify.commons.extensions.updateBottomTabItemColors
 import org.fossify.commons.helpers.LICENSE_ANDROID_LAME
 import org.fossify.commons.helpers.LICENSE_AUDIO_RECORD_VIEW
 import org.fossify.commons.helpers.LICENSE_AUTOFITTEXTVIEW
@@ -27,7 +24,6 @@ import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.models.FAQItem
 import org.fossify.voicerecorder.BuildConfig
 import org.fossify.voicerecorder.R
-import org.fossify.voicerecorder.adapters.ViewPagerAdapter
 import org.fossify.voicerecorder.databinding.ActivityMainBinding
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteExpiredTrashedRecordings
@@ -41,11 +37,19 @@ import org.greenrobot.eventbus.ThreadMode
 
 class MainActivity : SimpleActivity() {
 
+    private enum class Screen { LIST, RECORDER, TRASH }
+
     private var bus: EventBus? = null
+    private var currentScreen = Screen.LIST
+    private var initialized = false
 
     override var isSearchBarEnabled = true
 
     private lateinit var binding: ActivityMainBinding
+
+    private val playerView get() = binding.playerFragment.root
+    private val recorderView get() = binding.recorderFragment.root
+    private val trashView get() = binding.trashFragment.root
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,7 +59,7 @@ class MainActivity : SimpleActivity() {
         setupOptionsMenu()
         refreshMenuItems()
 
-        setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainTabsHolder))
+        setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainHolder))
 
         if (checkAppSideloading()) {
             return
@@ -88,23 +92,24 @@ class MainActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        updateMenuColors()
-        if (getPagerAdapter()?.showRecycleBin != config.useRecycleBin) {
-            setupViewPager()
+        binding.mainMenu.updateColors()
+        refreshMenuItems()
+        setupRecordFab()
+        if (initialized) {
+            playerView.onResume()
+            recorderView.onResume()
+            trashView.onResume()
         }
-        setupTabColors()
-        getPagerAdapter()?.onResume()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        config.lastUsedViewPagerPage = binding.viewPager.currentItem
     }
 
     override fun onDestroy() {
         super.onDestroy()
         bus?.unregister(this)
-        getPagerAdapter()?.onDestroy()
+        if (initialized) {
+            playerView.onDestroy()
+            recorderView.onDestroy()
+            trashView.onDestroy()
+        }
 
         Intent(this@MainActivity, RecorderService::class.java).apply {
             action = STOP_AMPLITUDE_UPDATE
@@ -116,19 +121,34 @@ class MainActivity : SimpleActivity() {
     }
 
     override fun onBackPressedCompat(): Boolean {
-        return if (binding.mainMenu.isSearchOpen) {
-            binding.mainMenu.closeSearch()
-            true
-        } else if (isThirdPartyIntent()) {
-            setResult(Activity.RESULT_CANCELED, null)
-            false
-        } else {
-            false
+        return when {
+            binding.mainMenu.isSearchOpen -> {
+                binding.mainMenu.closeSearch()
+                true
+            }
+
+            RecorderService.isRunning -> {
+                showStopRecordingDialog()
+                true
+            }
+
+            currentScreen != Screen.LIST -> {
+                showScreen(Screen.LIST)
+                true
+            }
+
+            isThirdPartyIntent() -> {
+                setResult(Activity.RESULT_CANCELED, null)
+                false
+            }
+
+            else -> false
         }
     }
 
     private fun refreshMenuItems() {
         binding.mainMenu.requireToolbar().menu.apply {
+            findItem(R.id.recycle_bin).isVisible = config.useRecycleBin
             findItem(R.id.more_apps_from_us).isVisible = !resources.getBoolean(
                 org.fossify.commons.R.bool.hide_google_relations
             )
@@ -140,18 +160,17 @@ class MainActivity : SimpleActivity() {
         binding.mainMenu.toggleHideOnScroll(false)
         binding.mainMenu.setupMenu()
 
-        binding.mainMenu.onSearchOpenListener = {
-            if (binding.viewPager.currentItem == 0) {
-                binding.viewPager.currentItem = 1
-            }
-        }
-
         binding.mainMenu.onSearchTextChangedListener = { text ->
-            getPagerAdapter()?.searchTextChanged(text)
+            when (currentScreen) {
+                Screen.LIST -> playerView.onSearchTextChanged(text)
+                Screen.TRASH -> trashView.onSearchTextChanged(text)
+                else -> {}
+            }
         }
 
         binding.mainMenu.requireToolbar().setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
+                R.id.recycle_bin -> showScreen(Screen.TRASH)
                 R.id.more_apps_from_us -> launchMoreAppsFromUsIntent()
                 R.id.settings -> launchSettings()
                 R.id.about -> launchAbout()
@@ -161,15 +180,11 @@ class MainActivity : SimpleActivity() {
         }
     }
 
-    private fun updateMenuColors() {
-        binding.mainMenu.updateColors()
-    }
-
     private fun tryInitVoiceRecorder() {
         if (isRPlus()) {
             ensureStoragePermission { granted ->
                 if (granted) {
-                    setupViewPager()
+                    setupContent()
                 } else {
                     toast(org.fossify.commons.R.string.no_storage_permissions)
                     finish()
@@ -178,7 +193,7 @@ class MainActivity : SimpleActivity() {
         } else {
             handlePermission(PERMISSION_WRITE_STORAGE) {
                 if (it) {
-                    setupViewPager()
+                    setupContent()
                 } else {
                     toast(org.fossify.commons.R.string.no_storage_permissions)
                     finish()
@@ -187,86 +202,62 @@ class MainActivity : SimpleActivity() {
         }
     }
 
-    private fun setupViewPager() {
-        binding.mainTabsHolder.removeAllTabs()
-        var tabDrawables = arrayOf(
-            org.fossify.commons.R.drawable.ic_microphone_vector,
-            R.drawable.ic_playlist_play_vector
-        )
-        var tabLabels = arrayOf(R.string.recorder, R.string.player)
-        if (config.useRecycleBin) {
-            tabDrawables += org.fossify.commons.R.drawable.ic_delete_vector
-            tabLabels += org.fossify.commons.R.string.recycle_bin
+    private fun setupContent() {
+        initialized = true
+        setupRecordFab()
+        binding.recordFab.setOnClickListener {
+            showScreen(Screen.RECORDER)
+            recorderView.beginRecording()
         }
 
-        tabDrawables.forEachIndexed { i, drawableId ->
-            binding.mainTabsHolder.newTab()
-                .setCustomView(org.fossify.commons.R.layout.bottom_tablayout_item).apply {
-                    customView
-                        ?.findViewById<ImageView>(org.fossify.commons.R.id.tab_item_icon)
-                        ?.setImageDrawable(
-                            AppCompatResources.getDrawable(
-                                this@MainActivity,
-                                drawableId
-                            )
-                        )
-
-                    customView
-                        ?.findViewById<TextView>(org.fossify.commons.R.id.tab_item_label)
-                        ?.setText(tabLabels[i])
-
-                    AutofitHelper.create(
-                        customView?.findViewById(org.fossify.commons.R.id.tab_item_label)
-                    )
-
-                    binding.mainTabsHolder.addTab(this)
-                }
-        }
-
-        binding.mainTabsHolder.onTabSelectionChanged(
-            tabUnselectedAction = {
-                updateBottomTabItemColors(it.customView, false)
-                if (it.position == 1 || it.position == 2) {
-                    binding.mainMenu.closeSearch()
-                }
-            },
-            tabSelectedAction = {
-                binding.viewPager.currentItem = it.position
-                updateBottomTabItemColors(it.customView, true)
-            }
-        )
-
-        binding.viewPager.adapter = ViewPagerAdapter(this, config.useRecycleBin)
-        binding.viewPager.offscreenPageLimit = 2
-        binding.viewPager.onPageChangeListener {
-            binding.mainTabsHolder.getTabAt(it)?.select()
-            (binding.viewPager.adapter as ViewPagerAdapter).finishActMode()
-        }
-
-        if (isThirdPartyIntent()) {
-            binding.viewPager.currentItem = 0
+        val startScreen = if (isThirdPartyIntent() || config.recordAfterLaunch) {
+            Screen.RECORDER
         } else {
-            binding.viewPager.currentItem = config.lastUsedViewPagerPage
-            binding.mainTabsHolder.getTabAt(config.lastUsedViewPagerPage)?.select()
+            Screen.LIST
+        }
+        showScreen(startScreen)
+    }
+
+    private fun setupRecordFab() {
+        binding.recordFab.setImageResource(R.drawable.ic_record_circle)
+        val primaryColor = getProperPrimaryColor()
+        binding.recordFab.backgroundTintList = ColorStateList.valueOf(primaryColor)
+        binding.recordFab.imageTintList = ColorStateList.valueOf(primaryColor.getContrastColor())
+    }
+
+    private fun showScreen(screen: Screen) {
+        currentScreen = screen
+        playerView.beVisibleIf(screen == Screen.LIST)
+        recorderView.beVisibleIf(screen == Screen.RECORDER)
+        trashView.beVisibleIf(screen == Screen.TRASH)
+        binding.recordFab.beVisibleIf(screen == Screen.LIST)
+
+        // While recording, the recorder shows its own top bar (the pending recording's
+        // name), so hide the global search bar.
+        binding.mainMenu.beVisibleIf(screen != Screen.RECORDER)
+
+        if (screen != Screen.LIST && screen != Screen.TRASH) {
+            binding.mainMenu.closeSearch()
+        }
+
+        when (screen) {
+            Screen.LIST -> playerView.onResume()
+            Screen.RECORDER -> recorderView.onResume()
+            Screen.TRASH -> trashView.onResume()
         }
     }
 
-    private fun setupTabColors() {
-        val activeView = binding.mainTabsHolder.getTabAt(binding.viewPager.currentItem)?.customView
-        updateBottomTabItemColors(activeView, true)
-        for (i in 0 until binding.mainTabsHolder.tabCount) {
-            if (i != binding.viewPager.currentItem) {
-                val inactiveView = binding.mainTabsHolder.getTabAt(i)?.customView
-                updateBottomTabItemColors(inactiveView, false)
-            }
+    private fun showStopRecordingDialog() {
+        ConfirmationDialog(
+            activity = this,
+            message = getString(R.string.stop_recording_description),
+            positive = R.string.stop,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = getString(R.string.stop_recording_title),
+        ) {
+            recorderView.saveRecording()
         }
-
-        binding.mainTabsHolder.getTabAt(binding.viewPager.currentItem)?.select()
-        val bottomBarColor = getBottomNavigationBackgroundColor()
-        binding.mainTabsHolder.setBackgroundColor(bottomBarColor)
     }
-
-    private fun getPagerAdapter() = (binding.viewPager.adapter as? ViewPagerAdapter)
 
     private fun launchSettings() {
         hideKeyboard()
@@ -315,6 +306,14 @@ class MainActivity : SimpleActivity() {
     }
 
     private fun isThirdPartyIntent() = intent?.action == MediaStore.Audio.Media.RECORD_SOUND_ACTION
+
+    @Suppress("unused")
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun recordingCompleted(@Suppress("UNUSED_PARAMETER") event: Events.RecordingCompleted) {
+        if (currentScreen == Screen.RECORDER && !isThirdPartyIntent()) {
+            showScreen(Screen.LIST)
+        }
+    }
 
     @Suppress("unused")
     @Subscribe(threadMode = ThreadMode.MAIN)

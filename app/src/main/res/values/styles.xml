@@ -2,6 +2,10 @@
 
     <style name="AppTheme" parent="AppTheme.Base" />
 
+    <style name="CircleShape">
+        <item name="cornerSize">50%</item>
+    </style>
+
     <style name="AppTheme.NoDisplay" parent="AppTheme">
         <item name="android:windowBackground">@null</item>
         <item name="android:windowContentOverlay">@null</item>

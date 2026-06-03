@@ -46,6 +46,9 @@
     <string name="playback_speed">Playback speed</string>
     <string name="waveform">Audio</string>
     <string name="transcript_tab">Transcript</string>
+    <string name="stop">Stop</string>
+    <string name="stop_recording_title">Stop recording?</string>
+    <string name="stop_recording_description">This will stop and save the current recording.</string>
     <!-- Settings Microphone mode selection -->
     <string name="microphone_mode_camcorder">Camera (video)</string>
     <string name="microphone_mode_voice_communication">Voice communication (auto gain)</string>

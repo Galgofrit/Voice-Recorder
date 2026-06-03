@@ -10,26 +10,42 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
 
-    <RelativeLayout
+    <FrameLayout
         android:id="@+id/main_holder"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <org.fossify.commons.views.MyViewPager
-            android:id="@+id/view_pager"
+        <include
+            android:id="@+id/player_fragment"
+            layout="@layout/fragment_player"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <include
+            android:id="@+id/recorder_fragment"
+            layout="@layout/fragment_recorder"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_above="@+id/main_tabs_holder" />
+            android:visibility="gone" />
 
-        <com.google.android.material.tabs.TabLayout
-            android:id="@+id/main_tabs_holder"
+        <include
+            android:id="@+id/trash_fragment"
+            layout="@layout/fragment_trash"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            app:tabIndicator="@null"
-            app:tabMinWidth="150dp"
-            app:tabRippleColor="@null" />
+            android:layout_height="match_parent"
+            android:visibility="gone" />
 
-    </RelativeLayout>
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/record_fab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="@dimen/activity_margin"
+            android:contentDescription="@string/recorder"
+            app:fabSize="normal"
+            app:shapeAppearanceOverlay="@style/CircleShape" />
+
+    </FrameLayout>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

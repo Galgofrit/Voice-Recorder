@@ -107,6 +107,9 @@ class RecorderService : Service() {
         val recordingFolder = defaultFolder.absolutePath
         recordingPath = "$recordingFolder/${getFormattedFilename()}.${config.getExtension()}"
         resultUri = null
+        EventBus.getDefault().post(
+            Events.RecordingFilename(recordingPath.getFilenameFromPath().substringBeforeLast('.'))
+        )
 
         try {
             recorder = if (recordMp3()) {
@@ -253,7 +256,9 @@ class RecorderService : Service() {
 
     private fun recordingSavedSuccessfully(savedUri: Uri) {
         toast(R.string.recording_saved_successfully)
-        EventBus.getDefault().post(Events.RecordingSaved(savedUri))
+        EventBus.getDefault().post(
+            Events.RecordingSaved(savedUri, recordingPath.getFilenameFromPath())
+        )
 
         if (config.autoTranscribe) {
             TranscriptionWorker.enqueue(this, savedUri, recordingPath.getFilenameFromPath())

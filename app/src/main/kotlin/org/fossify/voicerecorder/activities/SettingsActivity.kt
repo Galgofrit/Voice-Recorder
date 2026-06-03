@@ -86,6 +86,7 @@ class SettingsActivity : SimpleActivity() {
             binding.settingsColorCustomizationSectionLabel,
             binding.settingsGeneralSettingsLabel,
             binding.settingsRecordingSectionLabel,
+            binding.settingsTranscriptionSectionLabel,
             binding.settingsAudioSectionLabel,
             binding.settingsRecycleBinLabel
         ).forEach {

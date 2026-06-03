@@ -8,6 +8,7 @@ class Events {
     class RecordingAmplitude internal constructor(val amplitude: Int)
     class RecordingCompleted internal constructor()
     class RecordingTrashUpdated internal constructor()
-    class RecordingSaved internal constructor(val uri: Uri?)
+    class RecordingSaved internal constructor(val uri: Uri?, val name: String = "")
+    class RecordingFilename internal constructor(val name: String)
     class TranscriptionUpdated internal constructor(val recordingName: String)
 }

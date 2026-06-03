@@ -10,7 +10,12 @@ import org.fossify.commons.extensions.createDocumentUriUsingFirstParentTreeUri
 import org.fossify.commons.extensions.createSAFDirectorySdk30
 import org.fossify.commons.extensions.deleteFile
 import org.fossify.commons.extensions.getDoesFilePathExistSdk30
+import org.fossify.commons.extensions.getFilenameExtension
+import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.hasProperStoredFirstParentUri
+import org.fossify.commons.extensions.renameDocumentSdk30
+import org.fossify.commons.extensions.renameFile
+import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toFileDirItem
 import org.fossify.commons.helpers.DAY_SECONDS
 import org.fossify.commons.helpers.MONTH_SECONDS
@@ -18,7 +23,9 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.models.FileDirItem
 import org.fossify.voicerecorder.dialogs.StoragePermissionDialog
+import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Recording
+import org.greenrobot.eventbus.EventBus
 import java.io.File
 
 fun Activity.setKeepScreenAwake(keepScreenOn: Boolean) {
@@ -72,6 +79,37 @@ fun BaseSimpleActivity.launchFolderPicker(
                 callback(path)
             }
         }
+    }
+}
+
+// Renames a recording living in the recordings folder. [oldTitle] is the current
+// filename (with extension); [newBaseName] is the desired name (extension optional).
+// Posts RecordingCompleted on success so the list refreshes.
+fun BaseSimpleActivity.renameRecording(
+    oldTitle: String,
+    newBaseName: String,
+    callback: (() -> Unit)? = null,
+) {
+    val oldExtension = oldTitle.getFilenameExtension()
+    val newDisplayName = "${newBaseName.removeSuffix(".$oldExtension")}.$oldExtension"
+    val path = "${config.saveRecordingsFolder}/$oldTitle"
+    val newPath = "${path.getParentPath()}/$newDisplayName"
+
+    if (isRPlus()) {
+        try {
+            handleSAFDialogSdk30(path) {
+                if (renameDocumentSdk30(path, newPath)) {
+                    EventBus.getDefault().post(Events.RecordingCompleted())
+                    callback?.invoke()
+                }
+            }
+        } catch (e: Exception) {
+            showErrorToast(e)
+        }
+    } else {
+        renameFile(path, newPath, false)
+        EventBus.getDefault().post(Events.RecordingCompleted())
+        callback?.invoke()
     }
 }
 
