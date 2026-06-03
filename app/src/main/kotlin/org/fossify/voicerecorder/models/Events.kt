@@ -9,4 +9,5 @@ class Events {
     class RecordingCompleted internal constructor()
     class RecordingTrashUpdated internal constructor()
     class RecordingSaved internal constructor(val uri: Uri?)
+    class TranscriptionUpdated internal constructor(val recordingName: String)
 }

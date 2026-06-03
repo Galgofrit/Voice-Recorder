@@ -16,6 +16,8 @@ import android.widget.SeekBar
 import androidx.core.net.toUri
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
+import org.fossify.commons.extensions.beGone
+import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.copyToClipboard
 import org.fossify.commons.extensions.getColoredDrawableWithColor
@@ -26,16 +28,22 @@ import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.value
+import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isQPlus
 import org.fossify.commons.helpers.isTiramisuPlus
 import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.activities.SimpleActivity
 import org.fossify.voicerecorder.adapters.RecordingsAdapter
+import org.fossify.voicerecorder.databases.TranscriptDatabase
 import org.fossify.voicerecorder.databinding.FragmentPlayerBinding
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.interfaces.RefreshRecordingsListener
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Recording
+import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
+import org.fossify.voicerecorder.models.TRANSCRIPT_FAILED
+import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
+import org.fossify.voicerecorder.models.Transcript
 import org.fossify.voicerecorder.receivers.BecomingNoisyReceiver
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -62,6 +70,7 @@ class PlayerFragment(
     private var prevSavePath = ""
     private var prevRecycleBinState = context.config.useRecycleBin
     private var playOnPreparation = true
+    private var currentRecordingName = ""
     private lateinit var binding: FragmentPlayerBinding
 
     private var becomingNoisyReceiver: BecomingNoisyReceiver? = null
@@ -161,6 +170,13 @@ class PlayerFragment(
             true
         }
 
+        binding.transcriptView.setOnLongClickListener {
+            if (binding.transcriptView.value.isNotEmpty()) {
+                context.copyToClipboard(binding.transcriptView.value)
+            }
+            true
+        }
+
         binding.nextBtn.setOnClickListener {
             val adapter = getRecordingsAdapter()
             if (adapter == null || adapter.recordings.isEmpty()) {
@@ -246,6 +262,8 @@ class PlayerFragment(
 
     override fun playRecording(recording: Recording, playOnPrepared: Boolean) {
         resetProgress(recording)
+        currentRecordingName = recording.title
+        loadTranscript(recording.title)
         (binding.recordingsList.adapter as RecordingsAdapter).updateCurrentRecording(recording.id)
         playOnPreparation = playOnPrepared
 
@@ -313,6 +331,10 @@ class PlayerFragment(
         binding.playerProgressbar.max = recording?.duration ?: 0
         binding.playerTitle.text = recording?.title ?: ""
         binding.playerProgressMax.text = (recording?.duration ?: 0).getFormattedDuration()
+        if (recording == null) {
+            currentRecordingName = ""
+            binding.transcriptPanel.beGone()
+        }
     }
 
     fun onSearchTextChanged(text: String) {
@@ -410,6 +432,45 @@ class PlayerFragment(
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun recordingMovedToRecycleBin(@Suppress("UNUSED_PARAMETER") event: Events.RecordingTrashUpdated) {
         refreshRecordings()
+    }
+
+    @Suppress("unused")
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun transcriptionUpdated(event: Events.TranscriptionUpdated) {
+        if (event.recordingName == currentRecordingName) {
+            loadTranscript(currentRecordingName)
+        }
+    }
+
+    private fun loadTranscript(recordingName: String) {
+        ensureBackgroundThread {
+            val transcript = TranscriptDatabase.getInstance(context)
+                .transcriptDao()
+                .get(recordingName)
+            (context as SimpleActivity).runOnUiThread {
+                if (recordingName == currentRecordingName) {
+                    updateTranscriptUi(transcript)
+                }
+            }
+        }
+    }
+
+    private fun updateTranscriptUi(transcript: Transcript?) {
+        if (transcript == null) {
+            binding.transcriptPanel.beGone()
+            return
+        }
+
+        binding.transcriptPanel.beVisible()
+        binding.transcriptView.text = when (transcript.status) {
+            TRANSCRIPT_PROCESSING -> context.getString(R.string.transcribing)
+            TRANSCRIPT_FAILED -> context.getString(R.string.transcription_failed)
+            TRANSCRIPT_DONE -> transcript.text.ifBlank {
+                context.getString(R.string.no_transcript_yet)
+            }
+
+            else -> context.getString(R.string.no_transcript_yet)
+        }
     }
 
     private fun registerNoisyAudioReceiver() {

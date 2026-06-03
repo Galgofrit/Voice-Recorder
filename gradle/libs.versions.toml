@@ -21,6 +21,10 @@ audiorecordview = "1.0.5"
 tandroidlame = "1.1"
 #AutofitTextView
 autofittextview = "0.2.1"
+#Transcription (on-device whisper.cpp)
+room = "2.8.4"
+workmanager = "2.9.1"
+coroutines = "1.9.0"
 #Gradle
 gradlePlugins-agp = "9.2.1"
 #build
@@ -46,6 +50,12 @@ audiorecordview = { module = "com.github.Armen101:AudioRecordView", version.ref 
 tandroidlame = { module = "com.github.naman14:TAndroidLame", version.ref = "tandroidlame" }
 #AutofitTextView
 autofittextview = { module = "me.grantland:autofittextview", version.ref = "autofittextview" }
+#Transcription (on-device whisper.cpp)
+androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "workmanager" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 [plugins]
 android = { id = "com.android.application", version.ref = "gradlePlugins-agp" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

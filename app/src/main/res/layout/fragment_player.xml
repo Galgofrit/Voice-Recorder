@@ -23,7 +23,7 @@
         android:id="@+id/recordings_fastscroller"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@+id/player_controls_wrapper"
+        app:layout_constraintBottom_toTopOf="@+id/transcript_panel"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
@@ -48,6 +48,29 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/transcript_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fillViewport="true"
+        android:visibility="gone"
+        app:layout_constrainedHeight="true"
+        app:layout_constraintBottom_toTopOf="@+id/player_controls_wrapper"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHeight_max="180dp"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/transcript_view"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="@dimen/activity_margin"
+            android:textIsSelectable="true"
+            android:textSize="@dimen/normal_text_size"
+            tools:text="Transcribed text appears here." />
+
+    </androidx.core.widget.NestedScrollView>
 
     <RelativeLayout
         android:id="@+id/player_controls_wrapper"

@@ -37,6 +37,12 @@ android {
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
         vectorDrawables.useSupportLibrary = true
+
+        // On-device transcription (whisper.cpp). arm64-v8a covers physical
+        // devices and Apple-Silicon emulators; x86_64 covers Intel emulators.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -105,7 +111,19 @@ android {
     androidResources {
         @Suppress("UnstableApiUsage")
         generateLocaleConfig = true
+        // Keep the bundled whisper model (*.bin) uncompressed so it can be
+        // copied/mmap'd directly out of the APK.
+        noCompress.add("bin")
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
+        }
+    }
+
+    ndkVersion = "28.2.13676358"
 
     tasks.withType<KotlinCompile> {
         compilerOptions.jvmTarget.set(
@@ -137,6 +155,11 @@ detekt {
     allRules = false
 }
 
+// The whisper.cpp Kotlin wrapper is vendored upstream code; don't lint its style.
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    exclude("**/com/whispercpp/**")
+}
+
 dependencies {
     implementation(libs.fossify.commons)
     implementation(libs.eventbus)
@@ -146,5 +169,13 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.tandroidlame)
     implementation(libs.autofittextview)
+
+    // On-device transcription
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.kotlinx.coroutines.android)
+
     detektPlugins(libs.compose.detekt)
 }

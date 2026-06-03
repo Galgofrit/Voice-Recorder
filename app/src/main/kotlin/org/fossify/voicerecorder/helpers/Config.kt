@@ -100,4 +100,8 @@ class Config(context: Context) : BaseConfig(context) {
     var filenamePattern: String
         get() = prefs.getString(FILENAME_PATTERN, DEFAULT_FILENAME_PATTERN)!!
         set(filenamePattern) = prefs.edit { putString(FILENAME_PATTERN, filenamePattern) }
+
+    var autoTranscribe: Boolean
+        get() = prefs.getBoolean(AUTO_TRANSCRIBE, true)
+        set(autoTranscribe) = prefs.edit { putBoolean(AUTO_TRANSCRIBE, autoTranscribe) }
 }

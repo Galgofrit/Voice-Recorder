@@ -1,6 +1,7 @@
 package org.fossify.voicerecorder.adapters
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
@@ -27,7 +28,9 @@ import org.fossify.voicerecorder.extensions.trashRecordings
 import org.fossify.voicerecorder.interfaces.RefreshRecordingsListener
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Recording
+import org.fossify.voicerecorder.transcription.TranscriptionWorker
 import org.greenrobot.eventbus.EventBus
+import java.io.File
 import kotlin.math.min
 
 class RecordingsAdapter(
@@ -65,7 +68,21 @@ class RecordingsAdapter(
             R.id.cab_delete -> askConfirmDelete()
             R.id.cab_select_all -> selectAll()
             R.id.cab_open_with -> openRecordingWith()
+            R.id.cab_transcribe -> transcribeRecordings()
         }
+    }
+
+    private fun transcribeRecordings() {
+        getSelectedItems().forEach { recording ->
+            val path = recording.path
+            val uri = if (path.startsWith("content://") || path.startsWith("file://")) {
+                Uri.parse(path)
+            } else {
+                Uri.fromFile(File(path))
+            }
+            TranscriptionWorker.enqueue(activity, uri, recording.title)
+        }
+        finishActMode()
     }
 
     override fun getSelectableItemCount() = recordings.size

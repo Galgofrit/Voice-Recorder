@@ -75,6 +75,7 @@ class SettingsActivity : SimpleActivity() {
         setupMicrophoneMode()
         setupRecordAfterLaunch()
         setupKeepScreenOn()
+        setupAutoTranscribe()
         setupUseRecycleBin()
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsNestedScrollview)
@@ -280,6 +281,14 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsKeepScreenOnHolder.setOnClickListener {
             binding.settingsKeepScreenOn.toggle()
             config.keepScreenOn = binding.settingsKeepScreenOn.isChecked
+        }
+    }
+
+    private fun setupAutoTranscribe() {
+        binding.settingsAutoTranscribe.isChecked = config.autoTranscribe
+        binding.settingsAutoTranscribeHolder.setOnClickListener {
+            binding.settingsAutoTranscribe.toggle()
+            config.autoTranscribe = binding.settingsAutoTranscribe.isChecked
         }
     }
 

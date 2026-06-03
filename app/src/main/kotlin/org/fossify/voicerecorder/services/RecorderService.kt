@@ -44,6 +44,7 @@ import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.recorder.MediaRecorderWrapper
 import org.fossify.voicerecorder.recorder.Mp3Recorder
 import org.fossify.voicerecorder.recorder.Recorder
+import org.fossify.voicerecorder.transcription.TranscriptionWorker
 import org.greenrobot.eventbus.EventBus
 import java.io.File
 import java.util.Timer
@@ -253,6 +254,10 @@ class RecorderService : Service() {
     private fun recordingSavedSuccessfully(savedUri: Uri) {
         toast(R.string.recording_saved_successfully)
         EventBus.getDefault().post(Events.RecordingSaved(savedUri))
+
+        if (config.autoTranscribe) {
+            TranscriptionWorker.enqueue(this, savedUri, recordingPath.getFilenameFromPath())
+        }
     }
 
     private fun getDurationUpdateTask() = object : TimerTask() {
