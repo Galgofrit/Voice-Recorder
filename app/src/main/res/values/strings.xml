@@ -41,6 +41,11 @@
     <string name="transcription_failed">Transcription failed</string>
     <string name="no_transcript_yet">No transcript yet</string>
     <string name="transcription_languages">Transcription language</string>
+    <string name="skip_back_5s">Back 5 seconds</string>
+    <string name="skip_forward_10s">Forward 10 seconds</string>
+    <string name="playback_speed">Playback speed</string>
+    <string name="waveform">Audio</string>
+    <string name="transcript_tab">Transcript</string>
     <!-- Settings Microphone mode selection -->
     <string name="microphone_mode_camcorder">Camera (video)</string>
     <string name="microphone_mode_voice_communication">Voice communication (auto gain)</string>

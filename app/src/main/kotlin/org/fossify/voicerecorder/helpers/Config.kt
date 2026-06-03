@@ -117,4 +117,8 @@ class Config(context: Context) : BaseConfig(context) {
         val supported = WhisperLanguages.ALL.map { it.first }.toSet()
         return if (deviceLanguage in supported) deviceLanguage else "en"
     }
+
+    var playbackSpeed: Float
+        get() = prefs.getFloat(PLAYBACK_SPEED, 1f)
+        set(playbackSpeed) = prefs.edit { putFloat(PLAYBACK_SPEED, playbackSpeed) }
 }

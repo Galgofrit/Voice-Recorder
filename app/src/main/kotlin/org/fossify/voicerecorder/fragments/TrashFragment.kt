@@ -61,8 +61,6 @@ class TrashFragment(
 
     override fun refreshRecordings() = loadRecordings(trashed = true)
 
-    override fun playRecording(recording: Recording, playOnPrepared: Boolean) {}
-
     override fun onLoadingStart() {
         if (itemsIgnoringSearch.isEmpty()) {
             binding.loadingIndicator.show()

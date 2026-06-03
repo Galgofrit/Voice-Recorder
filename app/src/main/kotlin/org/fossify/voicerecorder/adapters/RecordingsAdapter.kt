@@ -36,7 +36,6 @@ import org.fossify.voicerecorder.models.Recording
 import org.fossify.voicerecorder.transcription.TranscriptionWorker
 import org.greenrobot.eventbus.EventBus
 import java.io.File
-import kotlin.math.min
 
 class RecordingsAdapter(
     activity: SimpleActivity,
@@ -209,7 +208,6 @@ class RecordingsAdapter(
             return
         }
 
-        val oldRecordingIndex = recordings.indexOfFirst { it.id == currRecordingId }
         val recordingsToRemove = recordings
             .filter { selectedKeys.contains(it.id) } as ArrayList<Recording>
 
@@ -217,7 +215,7 @@ class RecordingsAdapter(
 
         activity.deleteRecordings(recordingsToRemove) { success ->
             if (success) {
-                doDeleteAnimation(oldRecordingIndex, recordingsToRemove, positions)
+                doDeleteAnimation(recordingsToRemove, positions)
             }
         }
     }
@@ -227,7 +225,6 @@ class RecordingsAdapter(
             return
         }
 
-        val oldRecordingIndex = recordings.indexOfFirst { it.id == currRecordingId }
         val recordingsToRemove = recordings
             .filter { selectedKeys.contains(it.id) } as ArrayList<Recording>
 
@@ -235,14 +232,13 @@ class RecordingsAdapter(
 
         activity.trashRecordings(recordingsToRemove) { success ->
             if (success) {
-                doDeleteAnimation(oldRecordingIndex, recordingsToRemove, positions)
+                doDeleteAnimation(recordingsToRemove, positions)
                 EventBus.getDefault().post(Events.RecordingTrashUpdated())
             }
         }
     }
 
     private fun doDeleteAnimation(
-        oldRecordingIndex: Int,
         recordingsToRemove: ArrayList<Recording>,
         positions: ArrayList<Int>
     ) {
@@ -254,11 +250,6 @@ class RecordingsAdapter(
             } else {
                 positions.sortDescending()
                 removeSelectedItems(positions)
-                if (recordingsToRemove.map { it.id }.contains(currRecordingId)) {
-                    val newRecordingIndex = min(oldRecordingIndex, recordings.size - 1)
-                    val newRecording = recordings[newRecordingIndex]
-                    refreshListener.playRecording(newRecording, false)
-                }
             }
         }
     }
