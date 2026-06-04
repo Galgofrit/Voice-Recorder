@@ -12,9 +12,10 @@ import java.nio.ByteOrder
  * Decodes a recorded audio file (m4a/mp3/ogg) at [uri] into mono 16 kHz float PCM
  * in the [-1, 1] range, which is what whisper.cpp expects.
  */
+@Suppress("TooManyFunctions")
 object AudioDecoder {
     const val WHISPER_SAMPLE_RATE = 16000
-    private const val TIMEOUT_US = 10000L
+    private const val TIMEOUT_US = 1000L
     private const val PCM16_FULL_SCALE = 32768f
 
     fun decodeToWhisperInput(context: Context, uri: Uri): FloatArray {

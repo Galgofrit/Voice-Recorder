@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <dimen name="toggle_recording_button_size">64dp</dimen>
+    <!-- Pause/play button on the recorder & playback screens; matches the record FAB. -->
+    <dimen name="toggle_recording_button_size">@dimen/record_fab_size</dimen>
     <dimen name="player_button_margin">48dp</dimen>
     <dimen name="main_button_size">150dp</dimen>
+
+    <!-- Shared player/recorder layout -->
+    <dimen name="media_card_margin">20dp</dimen>
+    <dimen name="media_card_corner">28dp</dimen>
+    <dimen name="player_controls_padding_vertical">28dp</dimen>
+
+    <!-- Recordings list cards & month headers -->
+    <dimen name="list_card_margin_horizontal">12dp</dimen>
+    <dimen name="list_card_margin_vertical">5dp</dimen>
+    <dimen name="list_card_corner">16dp</dimen>
+
+    <!-- One-tap record FAB on the recordings list -->
+    <dimen name="record_fab_size">100dp</dimen>
+    <dimen name="record_fab_inner_icon">50dp</dimen>
+    <dimen name="record_fab_margin_bottom">@dimen/activity_margin</dimen>
 </resources>

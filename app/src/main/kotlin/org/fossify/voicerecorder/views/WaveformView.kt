@@ -49,6 +49,10 @@ class WaveformView @JvmOverloads constructor(
 
     var onSeek: ((fraction: Float) -> Unit)? = null
 
+    // Reports the currently-visible bar range so the host can lazily decode just that
+    // window of the waveform instead of the whole file up front.
+    var onVisibleRangeChanged: ((firstBar: Int, lastBar: Int) -> Unit)? = null
+
     // Supplies the live playback fraction; queried once per displayed frame so the
     // scroll is smooth and vsync-aligned (matches high-refresh-rate screens).
     var positionProvider: (() -> Float)? = null
@@ -122,6 +126,8 @@ class WaveformView @JvmOverloads constructor(
         val firstVisible = floor((scrollX - centerX) / barSlotPx).toInt().coerceAtLeast(0)
         val lastVisible = ceil((scrollX + (width - centerX)) / barSlotPx).toInt()
             .coerceAtMost(count - 1)
+
+        onVisibleRangeChanged?.invoke(firstVisible, lastVisible)
 
         for (i in firstVisible..lastVisible) {
             val contentX = i * barSlotPx

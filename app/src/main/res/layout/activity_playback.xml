@@ -31,9 +31,11 @@
             android:id="@+id/playback_card"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_margin="@dimen/normal_margin"
+            android:layout_margin="@dimen/media_card_margin"
             android:layout_weight="1"
-            app:cardCornerRadius="@dimen/normal_margin">
+            app:cardCornerRadius="@dimen/media_card_corner"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -134,6 +136,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingHorizontal="@dimen/activity_margin"
+            android:paddingTop="@dimen/normal_margin"
             tools:ignore="HardcodedText">
 
             <org.fossify.commons.views.MyTextView
@@ -161,7 +164,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_below="@+id/player_progressbar"
-                android:paddingVertical="@dimen/normal_margin">
+                android:paddingTop="@dimen/player_controls_padding_vertical"
+                android:paddingBottom="@dimen/record_fab_margin_bottom">
 
                 <ImageView
                     android:id="@+id/play_pause_btn"

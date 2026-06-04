@@ -5,19 +5,26 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.provider.MediaStore
+import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.appLaunched
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkAppSideloading
+import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.hideKeyboard
+import org.fossify.commons.extensions.isAValidFilename
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
+import org.fossify.commons.extensions.setupDialogStuff
+import org.fossify.commons.extensions.showKeyboard
 import org.fossify.commons.extensions.toast
+import org.fossify.commons.extensions.value
 import org.fossify.commons.helpers.LICENSE_ANDROID_LAME
 import org.fossify.commons.helpers.LICENSE_AUDIO_RECORD_VIEW
 import org.fossify.commons.helpers.LICENSE_AUTOFITTEXTVIEW
 import org.fossify.commons.helpers.LICENSE_EVENT_BUS
+import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.PERMISSION_RECORD_AUDIO
 import org.fossify.commons.helpers.PERMISSION_WRITE_STORAGE
 import org.fossify.commons.helpers.isRPlus
@@ -25,9 +32,11 @@ import org.fossify.commons.models.FAQItem
 import org.fossify.voicerecorder.BuildConfig
 import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.databinding.ActivityMainBinding
+import org.fossify.voicerecorder.databinding.DialogRenameRecordingBinding
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteExpiredTrashedRecordings
 import org.fossify.voicerecorder.extensions.ensureStoragePermission
+import org.fossify.voicerecorder.extensions.renameRecording
 import org.fossify.voicerecorder.helpers.STOP_AMPLITUDE_UPDATE
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.services.RecorderService
@@ -42,6 +51,10 @@ class MainActivity : SimpleActivity() {
     private var bus: EventBus? = null
     private var currentScreen = Screen.LIST
     private var initialized = false
+
+    // The custom name the user typed for the in-progress recording (if any). It is
+    // applied to the file once it's saved.
+    private var pendingCustomName: String? = null
 
     override var isSearchBarEnabled = true
 
@@ -93,6 +106,7 @@ class MainActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         binding.mainMenu.updateColors()
+        setupTopAppBar(binding.recorderFragment.recorderAppbar, NavigationIcon.None)
         refreshMenuItems()
         setupRecordFab()
         if (initialized) {
@@ -209,6 +223,18 @@ class MainActivity : SimpleActivity() {
             showScreen(Screen.RECORDER)
             recorderView.beginRecording()
         }
+        binding.recorderFragment.recorderToolbar.apply {
+            setOnClickListener { showRenamePendingDialog() }
+            inflateMenu(R.menu.recorder)
+            setOnMenuItemClickListener { item ->
+                if (item.itemId == R.id.discard_recording) {
+                    recorderView.discardRecording()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
 
         val startScreen = if (isThirdPartyIntent() || config.recordAfterLaunch) {
             Screen.RECORDER
@@ -232,8 +258,9 @@ class MainActivity : SimpleActivity() {
         trashView.beVisibleIf(screen == Screen.TRASH)
         binding.recordFab.beVisibleIf(screen == Screen.LIST)
 
-        // While recording, the recorder shows its own top bar (the pending recording's
-        // name), so hide the global search bar.
+        // While recording, hide the global search bar; the recorder fragment shows its
+        // own title bar (the search bar is the only AppBarLayout, so the content sits
+        // directly below it / fills from the top when it's hidden).
         binding.mainMenu.beVisibleIf(screen != Screen.RECORDER)
 
         if (screen != Screen.LIST && screen != Screen.TRASH) {
@@ -318,6 +345,14 @@ class MainActivity : SimpleActivity() {
     @Suppress("unused")
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun recordingSaved(event: Events.RecordingSaved) {
+        val customName = pendingCustomName
+        val savedBaseName = event.name.substringBeforeLast('.')
+        if (!customName.isNullOrEmpty() && customName != savedBaseName) {
+            renameRecording(event.name, customName)
+        }
+
+        pendingCustomName = null
+
         if (isThirdPartyIntent()) {
             Intent().apply {
                 data = event.uri!!
@@ -326,5 +361,47 @@ class MainActivity : SimpleActivity() {
             }
             finish()
         }
+    }
+
+    @Suppress("unused")
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun gotRecordingFilename(event: Events.RecordingFilename) {
+        pendingCustomName = null
+        binding.recorderFragment.recorderToolbar.title = event.name
+    }
+
+    private fun showRenamePendingDialog() {
+        val dialogBinding = DialogRenameRecordingBinding.inflate(layoutInflater).apply {
+            renameRecordingTitle.setText(binding.recorderFragment.recorderToolbar.title)
+        }
+
+        getAlertDialogBuilder()
+            .setPositiveButton(org.fossify.commons.R.string.ok, null)
+            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .apply {
+                setupDialogStuff(
+                    view = dialogBinding.root,
+                    dialog = this,
+                    titleId = org.fossify.commons.R.string.rename
+                ) { alertDialog ->
+                    alertDialog.showKeyboard(dialogBinding.renameRecordingTitle)
+                    alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val newTitle = dialogBinding.renameRecordingTitle.value
+                        when {
+                            newTitle.isEmpty() ->
+                                toast(org.fossify.commons.R.string.empty_name)
+
+                            !newTitle.isAValidFilename() ->
+                                toast(org.fossify.commons.R.string.invalid_name)
+
+                            else -> {
+                                pendingCustomName = newTitle
+                                binding.recorderFragment.recorderToolbar.title = newTitle
+                                alertDialog.dismiss()
+                            }
+                        }
+                    }
+                }
+            }
     }
 }

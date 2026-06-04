@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  Plain vertical stack (no CoordinatorLayout): the search bar and the content simply
+  stack, and each MyAppBarLayout applies its own status-bar inset. GONE bars collapse,
+  so the content always sits directly below whichever bar is visible.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/main_coordinator"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
 
     <org.fossify.commons.views.MySearchMenu
         android:id="@+id/main_menu"
@@ -13,8 +20,8 @@
     <FrameLayout
         android:id="@+id/main_holder"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <include
             android:id="@+id/player_fragment"
@@ -41,11 +48,12 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom|center_horizontal"
-            android:layout_marginBottom="@dimen/activity_margin"
+            android:layout_marginBottom="@dimen/record_fab_margin_bottom"
             android:contentDescription="@string/recorder"
-            app:fabSize="normal"
+            app:fabCustomSize="@dimen/record_fab_size"
+            app:maxImageSize="@dimen/record_fab_inner_icon"
             app:shapeAppearanceOverlay="@style/CircleShape" />
 
     </FrameLayout>
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</LinearLayout>

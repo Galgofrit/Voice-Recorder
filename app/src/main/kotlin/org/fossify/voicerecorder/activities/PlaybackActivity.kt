@@ -47,6 +47,7 @@ import org.fossify.voicerecorder.dialogs.RenameRecordingDialog
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteRecordings
 import org.fossify.voicerecorder.extensions.trashRecordings
+import org.fossify.voicerecorder.helpers.WaveformCache
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Recording
 import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
@@ -55,14 +56,15 @@ import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
 import org.fossify.voicerecorder.models.Transcript
 import org.fossify.voicerecorder.models.Word
 import org.fossify.voicerecorder.receivers.BecomingNoisyReceiver
-import org.fossify.voicerecorder.transcription.AudioDecoder
 import org.fossify.voicerecorder.transcription.TranscriptionWorker
 import org.fossify.voicerecorder.transcription.WhisperLanguages
+import org.fossify.voicerecorder.transcription.WaveformRangeDecoder
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import java.util.Timer
 import java.util.TimerTask
+import java.util.concurrent.Executors
 
 @Suppress("TooManyFunctions")
 class PlaybackActivity : SimpleActivity() {
@@ -80,6 +82,7 @@ class PlaybackActivity : SimpleActivity() {
         private const val WAVEFORM_BARS_PER_SECOND = 12
         private const val WAVEFORM_UNPLAYED_ALPHA = 0.3f
         private const val CARD_TINT_RATIO = 0.05f
+        private const val WAVEFORM_BARS_PER_CHUNK = 240
     }
 
     private val binding by lazy { ActivityPlaybackBinding.inflate(layoutInflater) }
@@ -102,6 +105,14 @@ class PlaybackActivity : SimpleActivity() {
     private var waveformReady = false
     private var anchorPositionMs = 0
     private var anchorClockMs = 0L
+
+    // Windowed waveform: the full timeline is sized up front from the duration, but bars
+    // are decoded lazily, one chunk at a time, only for the range that scrolls into view.
+    private var totalBars = 0
+    private var rawBars = FloatArray(0)
+    private var chunkDecoded = BooleanArray(0)
+    private var waveformPeak = 1f
+    private val waveformExecutor = Executors.newSingleThreadExecutor()
 
     private var becomingNoisyReceiver: BecomingNoisyReceiver? = null
     private var isReceiverRegistered = false
@@ -137,6 +148,7 @@ class PlaybackActivity : SimpleActivity() {
         player = null
         progressTimer.cancel()
         stopWordTimer()
+        waveformExecutor.shutdownNow()
         bus?.unregister(this)
     }
 
@@ -210,20 +222,127 @@ class PlaybackActivity : SimpleActivity() {
             val durationMs = player?.duration ?: 0
             if (durationMs > 0) estimatedPositionMs().toFloat() / durationMs else 0f
         }
+    }
 
-        ensureBackgroundThread {
-            val envelope = try {
-                buildEnvelope(AudioDecoder.decodeToWhisperInput(this, recordingPath.toUri()))
-            } catch (@Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception) {
-                FloatArray(0)
+    // Sizes the waveform timeline from the known duration and shows it immediately. A cached
+    // envelope loads instantly; otherwise a single worker decodes it, always doing the chunk
+    // at the current position first so seeks resolve right away while the rest fills in.
+    private fun initWaveform() {
+        if (totalBars > 0) {
+            return
+        }
+
+        val durationMs = player?.duration ?: 0
+        if (durationMs <= 0) {
+            return
+        }
+
+        totalBars = (durationMs / 1000f * WAVEFORM_BARS_PER_SECOND).toInt().coerceAtLeast(1)
+        waveformReady = true
+        binding.waveformLoading.beGoneIf(true)
+        binding.waveformView.setProgress(currentFraction())
+
+        val cached = WaveformCache.load(this, recordingTitle)
+        if (cached != null && cached.isNotEmpty()) {
+            rawBars = cached
+            binding.waveformView.setAmplitudes(cached)
+            return
+        }
+
+        rawBars = FloatArray(totalBars)
+        chunkDecoded = BooleanArray((totalBars + WAVEFORM_BARS_PER_CHUNK - 1) / WAVEFORM_BARS_PER_CHUNK)
+        binding.waveformView.setAmplitudes(FloatArray(totalBars))
+        waveformExecutor.execute { fillWaveform() }
+    }
+
+    // Decodes the whole waveform on one worker, always picking the undecoded chunk nearest
+    // the current position so whatever is on screen fills first. Caches the result when done.
+    private fun fillWaveform() {
+        val decoder = try {
+            WaveformRangeDecoder(this, recordingPath.toUri(), WAVEFORM_BARS_PER_SECOND)
+        } catch (@Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception) {
+            null
+        } ?: return
+
+        try {
+            while (!Thread.currentThread().isInterrupted) {
+                val chunk = nextChunkToDecode() ?: break
+                val startBar = chunk * WAVEFORM_BARS_PER_CHUNK
+                val endBar = ((chunk + 1) * WAVEFORM_BARS_PER_CHUNK).coerceAtMost(totalBars)
+                val slice = try {
+                    decoder.decodeRange(startBar, endBar)
+                } catch (@Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception) {
+                    null
+                }
+                if (slice != null) {
+                    runOnUiThread { applyWaveformSlice(slice) }
+                }
             }
-            runOnUiThread {
-                waveformReady = true
-                binding.waveformLoading.beGoneIf(true)
-                binding.waveformView.setAmplitudes(envelope)
-                binding.waveformView.setProgress(currentFraction())
+            runOnUiThread { cacheWaveform() }
+        } finally {
+            decoder.close()
+        }
+    }
+
+    // Picks (and marks) the not-yet-decoded chunk closest to the current position; null when
+    // all are done. Only the worker touches [chunkDecoded], so no locking is needed.
+    private fun nextChunkToDecode(): Int? {
+        val chunkCount = chunkDecoded.size
+        if (chunkCount == 0) {
+            return null
+        }
+
+        val durationMs = player?.duration ?: 0
+        val positionMs = player?.currentPosition ?: 0
+        val centerChunk = if (durationMs > 0) {
+            (positionMs.toFloat() / durationMs * chunkCount).toInt().coerceIn(0, chunkCount - 1)
+        } else {
+            0
+        }
+
+        var best = -1
+        var bestDistance = Int.MAX_VALUE
+        for (chunk in 0 until chunkCount) {
+            if (!chunkDecoded[chunk]) {
+                val distance = kotlin.math.abs(chunk - centerChunk)
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    best = chunk
+                }
             }
         }
+
+        if (best < 0) {
+            return null
+        }
+        chunkDecoded[best] = true
+        return best
+    }
+
+    private fun cacheWaveform() {
+        if (rawBars.isEmpty()) {
+            return
+        }
+        val peak = waveformPeak
+        WaveformCache.save(this, recordingTitle, FloatArray(totalBars) { rawBars[it] / peak })
+    }
+
+    private fun applyWaveformSlice(slice: WaveformRangeDecoder.Slice) {
+        if (rawBars.isEmpty()) {
+            return
+        }
+
+        for (i in slice.peaks.indices) {
+            val bar = slice.startBar + i
+            if (bar in rawBars.indices) {
+                val peak = slice.peaks[i]
+                rawBars[bar] = peak
+                if (peak > waveformPeak) {
+                    waveformPeak = peak
+                }
+            }
+        }
+        binding.waveformView.setAmplitudes(FloatArray(totalBars) { rawBars[it] / waveformPeak })
     }
 
     // Re-sync the clock anchor used to interpolate position between player updates.
@@ -246,34 +365,6 @@ class PlaybackActivity : SimpleActivity() {
         }
         val elapsed = (SystemClock.elapsedRealtime() - anchorClockMs).toDouble() * config.playbackSpeed
         return (anchorPositionMs + elapsed).toInt().coerceIn(0, currentPlayer.duration)
-    }
-
-    // Fixed-resolution envelope (constant bars per second) so the waveform keeps a
-    // steady scale/scroll speed regardless of recording length.
-    private fun buildEnvelope(pcm: FloatArray): FloatArray {
-        if (pcm.isEmpty()) {
-            return FloatArray(0)
-        }
-        val samplesPerBar =
-            (AudioDecoder.WHISPER_SAMPLE_RATE / WAVEFORM_BARS_PER_SECOND).coerceAtLeast(1)
-        val barCount = (pcm.size / samplesPerBar).coerceAtLeast(1)
-        val bars = FloatArray(barCount)
-        var peak = 0f
-        for (i in 0 until barCount) {
-            val start = i * samplesPerBar
-            val end = (start + samplesPerBar).coerceAtMost(pcm.size)
-            var maxAbs = 0f
-            for (j in start until end) {
-                val abs = kotlin.math.abs(pcm[j])
-                if (abs > maxAbs) maxAbs = abs
-            }
-            bars[i] = maxAbs
-            if (maxAbs > peak) peak = maxAbs
-        }
-        if (peak > 0f) {
-            for (i in bars.indices) bars[i] = bars[i] / peak
-        }
-        return bars
     }
 
     private fun onWaveformSeek(fraction: Float) {
@@ -328,6 +419,7 @@ class PlaybackActivity : SimpleActivity() {
 
             setOnPreparedListener {
                 applyPlaybackSpeed()
+                initWaveform()
                 resumePlayback()
             }
 

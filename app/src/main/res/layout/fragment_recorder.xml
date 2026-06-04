@@ -6,39 +6,50 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <org.fossify.commons.views.MyTextView
-        android:id="@+id/recording_name"
+    <org.fossify.commons.views.MyAppBarLayout
+        android:id="@+id/recorder_appbar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:ellipsize="end"
-        android:focusable="true"
-        android:gravity="center"
-        android:maxLines="1"
-        android:paddingHorizontal="@dimen/normal_margin"
-        android:paddingVertical="@dimen/activity_margin"
-        android:textSize="@dimen/bigger_text_size"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:text="Recording 1" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <com.visualizer.amplitude.AudioRecordView
-        android:id="@+id/recorder_visualizer"
-        android:layout_width="match_parent"
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/recorder_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle"
+            tools:title="Recording 1" />
+
+    </org.fossify.commons.views.MyAppBarLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/recorder_card"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_margin="@dimen/big_margin"
-        android:background="@drawable/frame_background"
-        app:chunkAlignTo="center"
-        app:chunkMaxHeight="200dp"
-        app:chunkMinHeight="2dp"
-        app:chunkRoundedCorners="true"
-        app:chunkSoftTransition="true"
-        app:chunkSpace="1dp"
-        app:chunkWidth="3dp"
+        android:layout_margin="@dimen/media_card_margin"
+        app:cardCornerRadius="@dimen/media_card_corner"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
         app:layout_constraintBottom_toTopOf="@+id/recording_duration"
-        app:layout_constraintTop_toBottomOf="@+id/recording_name" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/recorder_appbar">
+
+        <com.visualizer.amplitude.AudioRecordView
+            android:id="@+id/recorder_visualizer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="@dimen/activity_margin"
+            app:chunkAlignTo="center"
+            app:chunkMaxHeight="200dp"
+            app:chunkMinHeight="2dp"
+            app:chunkRoundedCorners="true"
+            app:chunkSoftTransition="true"
+            app:chunkSpace="1dp"
+            app:chunkWidth="3dp" />
+
+    </com.google.android.material.card.MaterialCardView>
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/recording_duration"
@@ -46,57 +57,54 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="@dimen/bigger_margin"
         android:textSize="@dimen/extra_big_text_size"
-        app:layout_constraintBottom_toTopOf="@+id/toggle_recording_button"
+        app:layout_constraintBottom_toTopOf="@+id/pause_button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         tools:text="00:00" />
 
-    <androidx.appcompat.widget.AppCompatImageView
-        android:id="@+id/cancel_recording_button"
-        android:layout_width="@dimen/fab_size"
-        android:layout_height="@dimen/fab_size"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:clickable="true"
-        android:contentDescription="@string/cancel"
-        android:focusable="true"
-        android:padding="@dimen/normal_margin"
-        android:src="@drawable/ic_cancel_recording_vector"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@id/toggle_recording_button"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/toggle_recording_button"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/toggle_recording_button"
-        tools:visibility="visible" />
-
+    <!-- The single record button (idle state). When recording starts it transforms into
+         the Pause + Stop buttons below. -->
     <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/toggle_recording_button"
         android:layout_width="@dimen/toggle_recording_button_size"
         android:layout_height="@dimen/toggle_recording_button_size"
-        android:layout_marginBottom="@dimen/big_margin"
+        android:layout_marginBottom="@dimen/record_fab_margin_bottom"
         android:background="@drawable/circle_button_background"
         android:clickable="true"
+        android:contentDescription="@string/recorder"
         android:focusable="true"
         android:padding="@dimen/normal_margin"
-        android:src="@drawable/ic_start_recording_vector"
+        android:src="@drawable/ic_record_circle"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
-    <androidx.appcompat.widget.AppCompatImageView
-        android:id="@+id/save_recording_button"
-        android:layout_width="@dimen/fab_size"
-        android:layout_height="@dimen/fab_size"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:clickable="true"
-        android:focusable="true"
-        android:padding="@dimen/normal_margin"
-        android:src="@drawable/ic_save_recording_vector"
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/pause_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/normal_margin"
+        android:layout_marginBottom="@dimen/record_fab_margin_bottom"
+        android:text="@string/pause"
         android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@id/toggle_recording_button"
+        app:icon="@drawable/ic_pause_vector"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/stop_button"
+        app:layout_constraintHorizontal_chainStyle="packed"
+        app:layout_constraintStart_toStartOf="parent"
+        tools:visibility="visible" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/stop_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/record_fab_margin_bottom"
+        android:text="@string/stop"
+        android:visibility="gone"
+        app:icon="@drawable/ic_stop_vector"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/toggle_recording_button"
-        app:layout_constraintTop_toTopOf="@id/toggle_recording_button"
+        app:layout_constraintStart_toEndOf="@+id/pause_button"
         tools:visibility="visible" />
 
 </org.fossify.voicerecorder.fragments.RecorderFragment>

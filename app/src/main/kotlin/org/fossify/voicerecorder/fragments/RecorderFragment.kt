@@ -4,38 +4,28 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
-import android.os.Handler
-import android.os.Looper
 import android.util.AttributeSet
-import androidx.appcompat.app.AlertDialog
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import android.view.animation.DecelerateInterpolator
+import androidx.core.graphics.ColorUtils
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.compose.extensions.getActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.PermissionRequiredDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
-import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getColoredDrawableWithColor
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getFormattedDuration
+import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
-import org.fossify.commons.extensions.isAValidFilename
 import org.fossify.commons.extensions.openNotificationSettings
 import org.fossify.commons.extensions.setDebouncedClickListener
-import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.showKeyboard
 import org.fossify.commons.extensions.toast
-import org.fossify.commons.extensions.value
 import org.fossify.voicerecorder.R
-import org.fossify.voicerecorder.databinding.DialogRenameRecordingBinding
 import org.fossify.voicerecorder.databinding.FragmentRecorderBinding
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.ensureStoragePermission
-import org.fossify.voicerecorder.extensions.renameRecording
 import org.fossify.voicerecorder.extensions.setKeepScreenAwake
 import org.fossify.voicerecorder.helpers.CANCEL_RECORDING
 import org.fossify.voicerecorder.helpers.GET_RECORDER_INFO
@@ -48,21 +38,22 @@ import org.fossify.voicerecorder.services.RecorderService
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.util.Timer
-import java.util.TimerTask
 
 class RecorderFragment(
     context: Context,
     attributeSet: AttributeSet
 ) : MyViewPagerFragment(context, attributeSet) {
 
-    private var status = RECORDING_STOPPED
-    private var pauseBlinkTimer = Timer()
-    private var bus: EventBus? = null
+    companion object {
+        // Matches PlaybackActivity so the recorder card has the same tint as the player.
+        private const val CARD_TINT_RATIO = 0.05f
+        private const val TRANSFORM_DURATION_MS = 300L
+        private const val RECORD_FADE_SCALE = 0.2f
+    }
 
-    // The custom name the user typed for the pending recording (if any). It is applied
-    // to the file once it's saved.
-    private var pendingCustomName: String? = null
+    private var status = RECORDING_STOPPED
+    private var previousStatus = RECORDING_STOPPED
+    private var bus: EventBus? = null
     private lateinit var binding: FragmentRecorderBinding
 
     override fun onFinishInflate() {
@@ -81,7 +72,6 @@ class RecorderFragment(
 
     override fun onDestroy() {
         bus?.unregister(this)
-        pauseBlinkTimer.cancel()
     }
 
     override fun onAttachedToWindow() {
@@ -98,7 +88,7 @@ class RecorderFragment(
                 if (it) {
                     activity.handleNotificationPermission { granted ->
                         if (granted) {
-                            cycleRecordingState()
+                            startRecordingFromUi()
                         } else {
                             PermissionRequiredDialog(
                                 activity = context as BaseSimpleActivity,
@@ -115,17 +105,9 @@ class RecorderFragment(
             }
         }
 
-        binding.cancelRecordingButton.setDebouncedClickListener { showCancelRecordingDialog() }
-        binding.saveRecordingButton.setDebouncedClickListener { saveRecording() }
-        binding.recordingName.setOnClickListener { showRenamePendingDialog() }
+        binding.pauseButton.setDebouncedClickListener { togglePause() }
+        binding.stopButton.setDebouncedClickListener { saveRecording() }
 
-        // The global search bar is hidden while recording, so pad the name bar down past
-        // the status bar ourselves.
-        ViewCompat.setOnApplyWindowInsetsListener(binding.recordingName) { view, insets ->
-            val topInset = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            view.updatePadding(top = topInset + view.paddingBottom)
-            insets
-        }
         Intent(context, RecorderService::class.java).apply {
             action = GET_RECORDER_INFO
             try {
@@ -143,53 +125,39 @@ class RecorderFragment(
             background.applyColorFilter(properPrimaryColor)
         }
 
-        binding.cancelRecordingButton.applyColorFilter(properTextColor)
-        binding.saveRecordingButton.applyColorFilter(properTextColor)
         binding.recorderVisualizer.chunkColor = properPrimaryColor
         binding.recordingDuration.setTextColor(properTextColor)
-        binding.recordingName.setTextColor(properTextColor)
+
+        val cardColor = ColorUtils.blendARGB(
+            context.getProperBackgroundColor(), properTextColor, CARD_TINT_RATIO
+        )
+        binding.recorderCard.setCardBackgroundColor(cardColor)
     }
 
     private fun updateRecordingDuration(duration: Int) {
         binding.recordingDuration.text = duration.getFormattedDuration()
     }
 
-    private fun getToggleButtonIcon(): Drawable {
-        val drawable = if (status == RECORDING_RUNNING || status == RECORDING_PAUSED) {
-            R.drawable.ic_pause_recording_vector
-        } else {
-            R.drawable.ic_start_recording_vector
-        }
+    private fun getToggleButtonIcon(): Drawable = resources.getColoredDrawableWithColor(
+        drawableId = R.drawable.ic_record_circle,
+        color = context.getProperPrimaryColor().getContrastColor()
+    )
 
-        return resources.getColoredDrawableWithColor(
-            drawableId = drawable,
-            color = context.getProperPrimaryColor().getContrastColor()
-        )
-    }
-
-    private fun cycleRecordingState() {
-        when (status) {
-            RECORDING_PAUSED,
-            RECORDING_RUNNING -> {
-                Intent(context, RecorderService::class.java).apply {
-                    action = TOGGLE_PAUSE
-                    context.startService(this)
-                }
-            }
-
-            else -> {
-                startRecording()
-            }
-        }
-
-        status = if (status == RECORDING_RUNNING) RECORDING_PAUSED else RECORDING_RUNNING
-        binding.toggleRecordingButton.setImageDrawable(getToggleButtonIcon())
-    }
-
-    private fun startRecording() {
+    private fun startRecordingFromUi() {
         Intent(context, RecorderService::class.java).apply {
             context.startService(this)
         }
+        status = RECORDING_RUNNING
+        refreshView()
+    }
+
+    private fun togglePause() {
+        Intent(context, RecorderService::class.java).apply {
+            action = TOGGLE_PAUSE
+            context.startService(this)
+        }
+        status = if (status == RECORDING_RUNNING) RECORDING_PAUSED else RECORDING_RUNNING
+        refreshView()
     }
 
     private fun showCancelRecordingDialog() {
@@ -204,16 +172,18 @@ class RecorderFragment(
     }
 
     private fun cancelRecording() {
-        status = RECORDING_STOPPED
+        leaveRecording()
         Intent(context, RecorderService::class.java).apply {
             action = CANCEL_RECORDING
             context.startService(this)
         }
-        refreshView()
     }
 
+    // Discards the in-progress recording (wired to the trash icon in the title bar).
+    fun discardRecording() = showCancelRecordingDialog()
+
     // Called by MainActivity's record FAB to start recording in one tap (reuses the
-    // permission-gated start flow on the toggle button).
+    // permission-gated start flow on the record button).
     fun beginRecording() {
         if (status == RECORDING_STOPPED) {
             binding.toggleRecordingButton.performClick()
@@ -221,52 +191,95 @@ class RecorderFragment(
     }
 
     fun saveRecording() {
-        status = RECORDING_STOPPED
+        leaveRecording()
         Intent(context, RecorderService::class.java).apply {
             context.stopService(this)
         }
-        refreshView()
     }
 
-    private fun getPauseBlinkTask() = object : TimerTask() {
-        override fun run() {
-            if (status == RECORDING_PAUSED) {
-                // update just the alpha so that it will always be clickable
-                Handler(Looper.getMainLooper()).post {
-                    binding.toggleRecordingButton.alpha =
-                        if (binding.toggleRecordingButton.alpha == 0f) 1f else 0f
-                }
-            }
-        }
+    // Marks the recording as stopped without repainting the idle record icon, which would
+    // otherwise flash on the toggle button as we leave for the list.
+    private fun leaveRecording() {
+        status = RECORDING_STOPPED
     }
 
     @SuppressLint("DiscouragedApi")
     private fun refreshView() {
+        val recording = status != RECORDING_STOPPED
+        val justStarted = previousStatus == RECORDING_STOPPED && status == RECORDING_RUNNING
+        previousStatus = status
+
         binding.toggleRecordingButton.setImageDrawable(getToggleButtonIcon())
-        binding.saveRecordingButton.beVisibleIf(status != RECORDING_STOPPED)
-        binding.cancelRecordingButton.beVisibleIf(status != RECORDING_STOPPED)
-        binding.recordingName.beVisibleIf(status != RECORDING_STOPPED)
-        pauseBlinkTimer.cancel()
+        updatePauseButton()
+
+        if (justStarted) {
+            animateRecordTransform()
+        } else {
+            binding.toggleRecordingButton.beVisibleIf(!recording)
+            binding.pauseButton.beVisibleIf(recording)
+            binding.stopButton.beVisibleIf(recording)
+        }
 
         when (status) {
-            RECORDING_PAUSED -> {
-                pauseBlinkTimer = Timer()
-                pauseBlinkTimer.scheduleAtFixedRate(getPauseBlinkTask(), 500, 500)
-            }
-
             RECORDING_RUNNING -> {
-                binding.toggleRecordingButton.alpha = 1f
                 if (context.config.keepScreenOn) {
                     context.getActivity().setKeepScreenAwake(true)
                 }
             }
 
-            else -> {
-                binding.toggleRecordingButton.alpha = 1f
+            RECORDING_STOPPED -> {
                 binding.recorderVisualizer.recreate()
                 binding.recordingDuration.text = null
             }
         }
+    }
+
+    private fun updatePauseButton() {
+        if (status == RECORDING_PAUSED) {
+            binding.pauseButton.setText(R.string.resume)
+            binding.pauseButton.setIconResource(org.fossify.commons.R.drawable.ic_play_vector)
+        } else {
+            binding.pauseButton.setText(R.string.pause)
+            binding.pauseButton.setIconResource(org.fossify.commons.R.drawable.ic_pause_vector)
+        }
+    }
+
+    // Smoothly transforms the single record button into the Pause + Stop buttons: the
+    // record button shrinks away to nothing while the two buttons simultaneously grow in
+    // from zero at their resting positions. Started synchronously (no posted frame) so the
+    // record button is never shown sitting still before the transition.
+    private fun animateRecordTransform() {
+        val record = binding.toggleRecordingButton
+        val pause = binding.pauseButton
+        val stop = binding.stopButton
+
+        listOf(pause, stop).forEach { button ->
+            button.beVisibleIf(true)
+            button.alpha = 0f
+            button.scaleX = 0f
+            button.scaleY = 0f
+            button.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(TRANSFORM_DURATION_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+
+        record.animate()
+            .alpha(0f)
+            .scaleX(RECORD_FADE_SCALE)
+            .scaleY(RECORD_FADE_SCALE)
+            .setDuration(TRANSFORM_DURATION_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                record.beVisibleIf(false)
+                record.alpha = 1f
+                record.scaleX = 1f
+                record.scaleY = 1f
+            }
+            .start()
     }
 
     @Suppress("unused")
@@ -289,60 +302,5 @@ class RecorderFragment(
         if (status == RECORDING_RUNNING) {
             binding.recorderVisualizer.update(amplitude)
         }
-    }
-
-    @Suppress("unused")
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun gotFilenameEvent(event: Events.RecordingFilename) {
-        pendingCustomName = null
-        binding.recordingName.text = event.name
-    }
-
-    @Suppress("unused")
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun gotRecordingSavedEvent(event: Events.RecordingSaved) {
-        val customName = pendingCustomName
-        val savedBaseName = event.name.substringBeforeLast('.')
-        if (!customName.isNullOrEmpty() && customName != savedBaseName) {
-            (context as? BaseSimpleActivity)?.renameRecording(event.name, customName)
-        }
-
-        pendingCustomName = null
-    }
-
-    private fun showRenamePendingDialog() {
-        val activity = context as? BaseSimpleActivity ?: return
-        val dialogBinding = DialogRenameRecordingBinding.inflate(activity.layoutInflater).apply {
-            renameRecordingTitle.setText(binding.recordingName.text)
-        }
-
-        activity.getAlertDialogBuilder()
-            .setPositiveButton(org.fossify.commons.R.string.ok, null)
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-            .apply {
-                activity.setupDialogStuff(
-                    view = dialogBinding.root,
-                    dialog = this,
-                    titleId = org.fossify.commons.R.string.rename
-                ) { alertDialog ->
-                    alertDialog.showKeyboard(dialogBinding.renameRecordingTitle)
-                    alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        val newTitle = dialogBinding.renameRecordingTitle.value
-                        when {
-                            newTitle.isEmpty() ->
-                                activity.toast(org.fossify.commons.R.string.empty_name)
-
-                            !newTitle.isAValidFilename() ->
-                                activity.toast(org.fossify.commons.R.string.invalid_name)
-
-                            else -> {
-                                pendingCustomName = newTitle
-                                binding.recordingName.text = newTitle
-                                alertDialog.dismiss()
-                            }
-                        }
-                    }
-                }
-            }
     }
 }

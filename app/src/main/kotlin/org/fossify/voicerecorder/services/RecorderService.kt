@@ -31,6 +31,7 @@ import org.fossify.voicerecorder.activities.SplashActivity
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.getFormattedFilename
 import org.fossify.voicerecorder.extensions.updateWidgets
+import org.fossify.voicerecorder.helpers.WaveformCache
 import org.fossify.voicerecorder.helpers.CANCEL_RECORDING
 import org.fossify.voicerecorder.helpers.EXTENSION_MP3
 import org.fossify.voicerecorder.helpers.GET_RECORDER_INFO
@@ -67,6 +68,10 @@ class RecorderService : Service() {
     private var amplitudeTimer = Timer()
     private var recorder: Recorder? = null
 
+    // Level samples captured live while recording, saved as the playback waveform so it
+    // never needs to be decoded (the same approach Google Recorder uses).
+    private val capturedAmplitudes = ArrayList<Int>()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -74,7 +79,9 @@ class RecorderService : Service() {
 
         when (intent.action) {
             GET_RECORDER_INFO -> broadcastRecorderInfo()
-            STOP_AMPLITUDE_UPDATE -> amplitudeTimer.cancel()
+            // Keep sampling levels even when the UI goes away, so the captured waveform
+            // covers the whole recording.
+            STOP_AMPLITUDE_UPDATE -> Unit
             TOGGLE_PAUSE -> togglePause()
             CANCEL_RECORDING -> cancelRecording()
             else -> startRecording()
@@ -107,6 +114,7 @@ class RecorderService : Service() {
         val recordingFolder = defaultFolder.absolutePath
         recordingPath = "$recordingFolder/${getFormattedFilename()}.${config.getExtension()}"
         resultUri = null
+        synchronized(capturedAmplitudes) { capturedAmplitudes.clear() }
         EventBus.getDefault().post(
             Events.RecordingFilename(recordingPath.getFilenameFromPath().substringBeforeLast('.'))
         )
@@ -177,6 +185,7 @@ class RecorderService : Service() {
             }
 
             ensureBackgroundThread {
+                saveWaveformEnvelope()
                 scanRecording()
                 EventBus.getDefault().post(Events.RecordingCompleted())
             }
@@ -276,14 +285,28 @@ class RecorderService : Service() {
 
     private fun getAmplitudeUpdateTask() = object : TimerTask() {
         override fun run() {
-            if (recorder != null) {
-                try {
-                    EventBus.getDefault()
-                        .post(Events.RecordingAmplitude(recorder!!.getMaxAmplitude()))
-                } catch (ignored: Exception) {
+            val currentRecorder = recorder ?: return
+            try {
+                val amplitude = currentRecorder.getMaxAmplitude()
+                EventBus.getDefault().post(Events.RecordingAmplitude(amplitude))
+                if (status == RECORDING_RUNNING) {
+                    synchronized(capturedAmplitudes) { capturedAmplitudes.add(amplitude) }
                 }
+            } catch (ignored: Exception) {
             }
         }
+    }
+
+    // Normalizes the captured levels and stores them as the recording's waveform envelope.
+    private fun saveWaveformEnvelope() {
+        val amplitudes = synchronized(capturedAmplitudes) { ArrayList(capturedAmplitudes) }
+        if (amplitudes.isEmpty()) {
+            return
+        }
+
+        val peak = (amplitudes.maxOrNull() ?: 0).coerceAtLeast(1).toFloat()
+        val bars = FloatArray(amplitudes.size) { amplitudes[it] / peak }
+        WaveformCache.save(this, recordingPath.getFilenameFromPath(), bars)
     }
 
     private fun showNotification(): Notification {

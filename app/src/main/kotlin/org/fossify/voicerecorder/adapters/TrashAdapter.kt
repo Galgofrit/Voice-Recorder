@@ -4,12 +4,15 @@ import android.annotation.SuppressLint
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.graphics.ColorUtils
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.dialogs.ConfirmationDialog
+import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.formatDate
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getFormattedDuration
+import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.setupViewBackground
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyRecyclerView
@@ -169,8 +172,15 @@ class TrashAdapter(
 
     private fun setupView(view: View, recording: Recording) {
         ItemRecordingBinding.bind(view).apply {
-            root.setupViewBackground(activity)
-            recordingFrame.isSelected = selectedKeys.contains(recording.id)
+            itemHolder.setupViewBackground(activity)
+            recordingFrame.setCardBackgroundColor(
+                ColorUtils.blendARGB(activity.getProperBackgroundColor(), textColor, CARD_TINT_RATIO)
+            )
+            itemHolder.isSelected = selectedKeys.contains(recording.id)
+
+            // Trash has no inline player; hide the play button and seekbar.
+            playPauseButton.beGone()
+            recordingSeekbar.beGone()
 
             arrayListOf(
                 recordingTitle,
@@ -189,4 +199,8 @@ class TrashAdapter(
     }
 
     override fun onChange(position: Int) = recordings.getOrNull(position)?.title ?: ""
+
+    companion object {
+        private const val CARD_TINT_RATIO = 0.08f
+    }
 }

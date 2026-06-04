@@ -57,6 +57,7 @@ class PlayerFragment(
 
     override fun onDestroy() {
         bus?.unregister(this)
+        getRecordingsAdapter()?.stopPlayback()
     }
 
     override fun onAttachedToWindow() {
@@ -141,6 +142,7 @@ class PlayerFragment(
     }
 
     private fun openRecording(recording: Recording) {
+        getRecordingsAdapter()?.stopPlayback()
         Intent(context, PlaybackActivity::class.java).apply {
             putExtra(PlaybackActivity.EXTRA_PATH, recording.path)
             putExtra(PlaybackActivity.EXTRA_TITLE, recording.title)

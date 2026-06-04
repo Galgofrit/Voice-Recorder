@@ -23,6 +23,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.models.FileDirItem
 import org.fossify.voicerecorder.dialogs.StoragePermissionDialog
+import org.fossify.voicerecorder.helpers.WaveformCache
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Recording
 import org.greenrobot.eventbus.EventBus
@@ -99,6 +100,7 @@ fun BaseSimpleActivity.renameRecording(
         try {
             handleSAFDialogSdk30(path) {
                 if (renameDocumentSdk30(path, newPath)) {
+                    WaveformCache.rename(this, oldTitle, newDisplayName)
                     EventBus.getDefault().post(Events.RecordingCompleted())
                     callback?.invoke()
                 }
@@ -108,6 +110,7 @@ fun BaseSimpleActivity.renameRecording(
         }
     } else {
         renameFile(path, newPath, false)
+        WaveformCache.rename(this, oldTitle, newDisplayName)
         EventBus.getDefault().post(Events.RecordingCompleted())
         callback?.invoke()
     }
