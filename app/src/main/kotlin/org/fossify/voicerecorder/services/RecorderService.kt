@@ -34,6 +34,7 @@ import org.fossify.voicerecorder.extensions.updateWidgets
 import org.fossify.voicerecorder.helpers.WaveformCache
 import org.fossify.voicerecorder.helpers.CANCEL_RECORDING
 import org.fossify.voicerecorder.helpers.EXTENSION_MP3
+import org.fossify.voicerecorder.helpers.EXTENSION_OGG
 import org.fossify.voicerecorder.helpers.GET_RECORDER_INFO
 import org.fossify.voicerecorder.helpers.RECORDER_RUNNING_NOTIF_ID
 import org.fossify.voicerecorder.helpers.RECORDING_PAUSED
@@ -42,9 +43,11 @@ import org.fossify.voicerecorder.helpers.RECORDING_STOPPED
 import org.fossify.voicerecorder.helpers.STOP_AMPLITUDE_UPDATE
 import org.fossify.voicerecorder.helpers.TOGGLE_PAUSE
 import org.fossify.voicerecorder.models.Events
+import org.fossify.voicerecorder.recorder.AacRecorder
 import org.fossify.voicerecorder.recorder.MediaRecorderWrapper
 import org.fossify.voicerecorder.recorder.Mp3Recorder
 import org.fossify.voicerecorder.recorder.Recorder
+import org.fossify.voicerecorder.transcription.LiveTranscriber
 import org.fossify.voicerecorder.transcription.TranscriptionWorker
 import org.greenrobot.eventbus.EventBus
 import java.io.File
@@ -71,6 +74,10 @@ class RecorderService : Service() {
     // Level samples captured live while recording, saved as the playback waveform so it
     // never needs to be decoded (the same approach Google Recorder uses).
     private val capturedAmplitudes = ArrayList<Int>()
+
+    // Live transcription (when auto-transcribe is on and the format exposes PCM); when set,
+    // the post-recording transcription worker is skipped.
+    private var liveTranscriber: LiveTranscriber? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -120,11 +127,12 @@ class RecorderService : Service() {
         )
 
         try {
-            recorder = if (recordMp3()) {
-                Mp3Recorder(this)
-            } else {
-                MediaRecorderWrapper(this)
+            recorder = when {
+                recordMp3() -> Mp3Recorder(this)
+                config.extension == EXTENSION_OGG -> MediaRecorderWrapper(this)
+                else -> AacRecorder(this)
             }
+            setupLiveTranscription()
 
             if (isRPlus()) {
                 val fileUri = createDocumentUriUsingFirstParentTreeUri(recordingPath)
@@ -184,6 +192,7 @@ class RecorderService : Service() {
                 e.printStackTrace()
             }
 
+            liveTranscriber?.finish { }
             ensureBackgroundThread {
                 saveWaveformEnvelope()
                 scanRecording()
@@ -196,6 +205,8 @@ class RecorderService : Service() {
     private fun cancelRecording() {
         durationTimer.cancel()
         amplitudeTimer.cancel()
+        liveTranscriber?.cancel()
+        liveTranscriber = null
         status = RECORDING_STOPPED
 
         recorder?.apply {
@@ -269,7 +280,9 @@ class RecorderService : Service() {
             Events.RecordingSaved(savedUri, recordingPath.getFilenameFromPath())
         )
 
-        if (config.autoTranscribe) {
+        // Live transcription already produced the transcript; only fall back to the
+        // post-recording worker when there was no live transcriber (e.g. OGG).
+        if (config.autoTranscribe && liveTranscriber == null) {
             TranscriptionWorker.enqueue(this, savedUri, recordingPath.getFilenameFromPath())
         }
     }
@@ -298,6 +311,21 @@ class RecorderService : Service() {
     }
 
     // Normalizes the captured levels and stores them as the recording's waveform envelope.
+    // Starts live transcription if auto-transcribe is on and the recorder exposes PCM
+    // (M4A/MP3). OGG (MediaRecorder) has no PCM, so it falls back to the post-recording worker.
+    private fun setupLiveTranscription() {
+        liveTranscriber = null
+        if (!config.autoTranscribe || config.extension == EXTENSION_OGG) {
+            return
+        }
+
+        val transcriber = LiveTranscriber(this, recordingPath.getFilenameFromPath()).apply { start() }
+        liveTranscriber = transcriber
+        recorder?.onPcmData = { samples, count, sampleRate ->
+            transcriber.feed(samples, count, sampleRate)
+        }
+    }
+
     private fun saveWaveformEnvelope() {
         val amplitudes = synchronized(capturedAmplitudes) { ArrayList(capturedAmplitudes) }
         if (amplitudes.isEmpty()) {

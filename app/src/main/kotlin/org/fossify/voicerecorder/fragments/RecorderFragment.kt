@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.util.AttributeSet
+import android.view.View
 import android.view.animation.DecelerateInterpolator
 import androidx.core.graphics.ColorUtils
+import com.google.android.material.tabs.TabLayout
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.compose.extensions.getActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -107,6 +109,7 @@ class RecorderFragment(
 
         binding.pauseButton.setDebouncedClickListener { togglePause() }
         binding.stopButton.setDebouncedClickListener { saveRecording() }
+        setupTabs()
 
         Intent(context, RecorderService::class.java).apply {
             action = GET_RECORDER_INFO
@@ -127,11 +130,28 @@ class RecorderFragment(
 
         binding.recorderVisualizer.chunkColor = properPrimaryColor
         binding.recordingDuration.setTextColor(properTextColor)
+        binding.recorderTranscriptView.setTextColor(properTextColor)
+        binding.recorderTabs.setTabTextColors(properTextColor, properPrimaryColor)
+        binding.recorderTabs.setSelectedTabIndicatorColor(properPrimaryColor)
 
         val cardColor = ColorUtils.blendARGB(
             context.getProperBackgroundColor(), properTextColor, CARD_TINT_RATIO
         )
         binding.recorderCard.setCardBackgroundColor(cardColor)
+    }
+
+    private fun setupTabs() {
+        showTranscriptTab(false)
+        binding.recorderTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = showTranscriptTab(tab.position == 1)
+            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+        })
+    }
+
+    private fun showTranscriptTab(showTranscript: Boolean) {
+        binding.recorderVisualizer.beVisibleIf(!showTranscript)
+        binding.recorderTranscriptPanel.beVisibleIf(showTranscript)
     }
 
     private fun updateRecordingDuration(duration: Int) {
@@ -213,6 +233,7 @@ class RecorderFragment(
         updatePauseButton()
 
         if (justStarted) {
+            binding.recorderTranscriptView.text = ""
             animateRecordTransform()
         } else {
             binding.toggleRecordingButton.beVisibleIf(!recording)
@@ -301,6 +322,15 @@ class RecorderFragment(
         val amplitude = event.amplitude
         if (status == RECORDING_RUNNING) {
             binding.recorderVisualizer.update(amplitude)
+        }
+    }
+
+    @Suppress("unused")
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun gotLiveTranscription(event: Events.LiveTranscription) {
+        binding.recorderTranscriptView.text = event.text
+        binding.recorderTranscriptPanel.post {
+            binding.recorderTranscriptPanel.fullScroll(View.FOCUS_DOWN)
         }
     }
 }

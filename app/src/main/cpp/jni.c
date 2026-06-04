@@ -186,6 +186,20 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
     params.single_segment = false;
     params.token_timestamps = true; // per-token t0/t1 for word-level read-along
 
+    // Disable temperature fallback. On a hard/ambiguous window whisper otherwise re-runs the
+    // decoder up to ~6 times at rising temperatures, which (especially with token repetition)
+    // makes a single window blow up from <1s to 15s+. For live transcription bounded latency
+    // matters more than perfecting an occasional rough segment, so we take one greedy pass.
+    params.temperature_inc = 0.0f;
+
+    // Only encode as much audio context as the clip actually contains, instead of always
+    // encoding a full 30s window (1500 frames @ 50/s for 16kHz). Short live chunks then
+    // transcribe several times faster, with no quality loss (we'd otherwise just be
+    // encoding silent padding). For clips >= ~30s we leave it at 0 (the full context).
+    long needed_ctx = (long) audio_data_length * 1500 / (16000 * 30) + 32;
+    params.audio_ctx = (needed_ctx >= 1500) ? 0 : (int) needed_ctx;
+    LOGI("audio_ctx=%d for %d samples", params.audio_ctx, audio_data_length);
+
     whisper_reset_timings(context);
 
     LOGI("About to run whisper_full (lang=%s)", language_chars);

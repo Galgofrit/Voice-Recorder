@@ -11,4 +11,5 @@ class Events {
     class RecordingSaved internal constructor(val uri: Uri?, val name: String = "")
     class RecordingFilename internal constructor(val name: String)
     class TranscriptionUpdated internal constructor(val recordingName: String)
+    class LiveTranscription internal constructor(val text: String)
 }

@@ -11,9 +11,10 @@ import java.io.File
  * The model ships in assets and is copied to filesDir once so whisper can mmap it.
  */
 object TranscriptionEngine {
-    // Multilingual quantized "small" model (~99 languages) — higher accuracy
-    // (notably for lower-resource languages), still fast on a modern device.
-    private const val MODEL_NAME = "ggml-small-q5_1.bin"
+    // Multilingual quantized "base" model — chosen for speed so transcription can keep up
+    // live during recording. Less accurate than "small" for low-resource languages (notably
+    // Hebrew), but solid for English/Japanese and several times faster.
+    private const val MODEL_NAME = "ggml-base-q5_1.bin"
     private const val MODEL_ASSET = "models/$MODEL_NAME"
 
     private val mutex = Mutex()

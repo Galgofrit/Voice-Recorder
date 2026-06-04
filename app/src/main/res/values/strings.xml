@@ -41,6 +41,9 @@
     <string name="transcription_failed">Transcription failed</string>
     <string name="no_transcript_yet">No transcript yet</string>
     <string name="transcription_languages">Transcription language</string>
+    <string name="transcription_chunk_size">Live transcription chunk size</string>
+    <string name="transcription_chunk_size_hint">Smaller chunks show the live transcript sooner, but slightly raise the chance of mistakes. 3 seconds is recommended.</string>
+    <string name="seconds_short">%1$d s</string>
     <string name="skip_back_5s">Back 5 seconds</string>
     <string name="skip_forward_10s">Forward 10 seconds</string>
     <string name="playback_speed">Playback speed</string>

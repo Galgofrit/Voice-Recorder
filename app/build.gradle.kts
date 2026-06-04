@@ -177,9 +177,9 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 // The transcription model is too large to commit (and LFS can't push to a fork),
 // so it's gitignored and downloaded into assets/ at build time. The APK still
 // bundles it exactly as if it were checked in.
-val whisperModelFile = file("src/main/assets/models/ggml-small-q5_1.bin")
+val whisperModelFile = file("src/main/assets/models/ggml-base-q5_1.bin")
 val whisperModelUrl =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
 
 val downloadWhisperModel by tasks.registering {
     description = "Downloads the bundled whisper transcription model if it's missing."

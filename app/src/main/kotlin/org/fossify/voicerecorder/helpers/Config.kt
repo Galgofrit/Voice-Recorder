@@ -112,6 +112,11 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getString(TRANSCRIPTION_LANGUAGE, null) ?: defaultTranscriptionLanguage()
         set(value) = prefs.edit { putString(TRANSCRIPTION_LANGUAGE, value) }
 
+    // Seconds of new audio per live-transcription window (see DEFAULT/MIN/MAX constants).
+    var transcriptionChunkSeconds: Int
+        get() = prefs.getInt(TRANSCRIPTION_CHUNK_SECONDS, DEFAULT_TRANSCRIPTION_CHUNK_SECONDS)
+        set(value) = prefs.edit { putInt(TRANSCRIPTION_CHUNK_SECONDS, value) }
+
     private fun defaultTranscriptionLanguage(): String {
         val deviceLanguage = Locale.getDefault().language
         val supported = WhisperLanguages.ALL.map { it.first }.toSet()

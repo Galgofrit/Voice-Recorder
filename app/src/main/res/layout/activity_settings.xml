@@ -304,6 +304,46 @@
 
             </RelativeLayout>
 
+            <RelativeLayout
+                android:id="@+id/settings_transcription_chunk_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_transcription_chunk_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/transcription_chunk_size" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_transcription_chunk_value"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignBaseline="@+id/settings_transcription_chunk_label"
+                    android:layout_alignParentEnd="true"
+                    tools:text="3 s" />
+
+                <SeekBar
+                    android:id="@+id/settings_transcription_chunk_seekbar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_transcription_chunk_label"
+                    android:max="10"
+                    android:min="2" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_transcription_chunk_hint"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_transcription_chunk_seekbar"
+                    android:text="@string/transcription_chunk_size_hint" />
+
+            </RelativeLayout>
+
             <include
                 android:id="@+id/settings_transcription_divider"
                 layout="@layout/divider" />

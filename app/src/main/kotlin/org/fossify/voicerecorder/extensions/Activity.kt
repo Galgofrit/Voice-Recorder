@@ -22,6 +22,7 @@ import org.fossify.commons.helpers.MONTH_SECONDS
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.models.FileDirItem
+import org.fossify.voicerecorder.databases.TranscriptDatabase
 import org.fossify.voicerecorder.dialogs.StoragePermissionDialog
 import org.fossify.voicerecorder.helpers.WaveformCache
 import org.fossify.voicerecorder.models.Events
@@ -100,7 +101,7 @@ fun BaseSimpleActivity.renameRecording(
         try {
             handleSAFDialogSdk30(path) {
                 if (renameDocumentSdk30(path, newPath)) {
-                    WaveformCache.rename(this, oldTitle, newDisplayName)
+                    moveRecordingSidecars(oldTitle, newDisplayName)
                     EventBus.getDefault().post(Events.RecordingCompleted())
                     callback?.invoke()
                 }
@@ -110,9 +111,22 @@ fun BaseSimpleActivity.renameRecording(
         }
     } else {
         renameFile(path, newPath, false)
-        WaveformCache.rename(this, oldTitle, newDisplayName)
+        moveRecordingSidecars(oldTitle, newDisplayName)
         EventBus.getDefault().post(Events.RecordingCompleted())
         callback?.invoke()
+    }
+}
+
+// Renames carry a recording's cached waveform and saved transcript with it (both keyed by
+// filename), so neither is lost — e.g. naming a just-recorded, live-transcribed clip.
+private fun BaseSimpleActivity.moveRecordingSidecars(oldTitle: String, newName: String) {
+    WaveformCache.rename(this, oldTitle, newName)
+    ensureBackgroundThread {
+        val dao = TranscriptDatabase.getInstance(this).transcriptDao()
+        dao.get(oldTitle)?.let {
+            dao.upsert(it.copy(recordingName = newName))
+            dao.delete(oldTitle)
+        }
     }
 }
 

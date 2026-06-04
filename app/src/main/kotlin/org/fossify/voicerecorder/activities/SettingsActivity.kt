@@ -3,6 +3,7 @@ package org.fossify.voicerecorder.activities
 import android.content.Intent
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.widget.SeekBar
 import org.fossify.commons.dialogs.ChangeDateTimeFormatDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
@@ -78,6 +79,7 @@ class SettingsActivity : SimpleActivity() {
         setupKeepScreenOn()
         setupAutoTranscribe()
         setupTranscriptionLanguages()
+        setupTranscriptionChunkSize()
         setupUseRecycleBin()
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsNestedScrollview)
@@ -313,6 +315,29 @@ class SettingsActivity : SimpleActivity() {
                     WhisperLanguages.nameOf(config.transcriptionLanguage)
             }
         }
+    }
+
+    private fun setupTranscriptionChunkSize() {
+        val seekBar = binding.settingsTranscriptionChunkSeekbar
+        fun showValue(seconds: Int) {
+            binding.settingsTranscriptionChunkValue.text = getString(R.string.seconds_short, seconds)
+        }
+
+        seekBar.progress = config.transcriptionChunkSeconds
+        showValue(seekBar.progress)
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                showValue(progress)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) {
+                // Nothing to do until the value settles.
+            }
+
+            override fun onStopTrackingTouch(bar: SeekBar) {
+                config.transcriptionChunkSeconds = bar.progress
+            }
+        })
     }
 
     private fun setupUseRecycleBin() {

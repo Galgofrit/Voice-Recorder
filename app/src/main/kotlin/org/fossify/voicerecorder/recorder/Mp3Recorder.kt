@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 class Mp3Recorder(val context: Context) : Recorder {
+    override var onPcmData: ((samples: ShortArray, count: Int, sampleRate: Int) -> Unit)? = null
     private var mp3buffer: ByteArray = ByteArray(0)
     private var isPaused = AtomicBoolean(false)
     private var isStopped = AtomicBoolean(false)
@@ -82,6 +83,7 @@ class Mp3Recorder(val context: Context) : Recorder {
                 if (!isPaused.get()) {
                     val count = audioRecord.read(rawData, 0, minBufferSize)
                     if (count > 0) {
+                        onPcmData?.invoke(rawData, count, context.config.samplingRate)
                         val encoded = androidLame!!.encode(rawData, rawData, count, mp3buffer)
                         if (encoded > 0) {
                             try {

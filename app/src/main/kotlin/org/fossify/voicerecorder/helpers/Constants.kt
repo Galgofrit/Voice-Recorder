@@ -105,7 +105,14 @@ const val WAS_MIC_MODE_WARNING_SHOWN = "was_mic_mode_warning_shown"
 const val FILENAME_PATTERN = "filename_pattern"
 const val AUTO_TRANSCRIBE = "auto_transcribe"
 const val TRANSCRIPTION_LANGUAGE = "transcription_language"
+const val TRANSCRIPTION_CHUNK_SECONDS = "transcription_chunk_seconds"
 const val PLAYBACK_SPEED = "playback_speed"
 
 const val DEFAULT_RECORDINGS_FOLDER = "Recordings"
 const val DEFAULT_FILENAME_PATTERN = "%Y%M%D_%h%m%s"
+
+// Live-transcription chunk size (seconds of new audio per window). Smaller = more responsive
+// live text but slightly more errors. Bounded by the settings slider.
+const val DEFAULT_TRANSCRIPTION_CHUNK_SECONDS = 3
+const val MIN_TRANSCRIPTION_CHUNK_SECONDS = 2
+const val MAX_TRANSCRIPTION_CHUNK_SECONDS = 10

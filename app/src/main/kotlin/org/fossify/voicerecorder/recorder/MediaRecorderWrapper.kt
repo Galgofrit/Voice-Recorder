@@ -7,6 +7,8 @@ import android.os.ParcelFileDescriptor
 import org.fossify.voicerecorder.extensions.config
 
 class MediaRecorderWrapper(val context: Context) : Recorder {
+    // MediaRecorder encodes internally; no PCM is available to tee.
+    override var onPcmData: ((samples: ShortArray, count: Int, sampleRate: Int) -> Unit)? = null
 
     @Suppress("DEPRECATION")
     private var recorder = MediaRecorder().apply {
