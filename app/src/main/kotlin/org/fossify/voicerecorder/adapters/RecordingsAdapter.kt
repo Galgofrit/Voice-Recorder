@@ -426,7 +426,7 @@ class RecordingsAdapter(
         }
 
         binding.playPauseButton.setImageResource(playIcon)
-        binding.playPauseButton.applyColorFilter(activity.getProperPrimaryColor())
+        binding.playPauseButton.applyColorFilter(activity.config.recordingAccentColor)
         binding.playPauseButton.setOnClickListener { togglePlayback(recording) }
 
         // While this recording is loaded, the indicator counts down the remaining time;

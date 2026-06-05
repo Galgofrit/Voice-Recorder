@@ -1,10 +1,37 @@
 package org.fossify.voicerecorder.activities
 
+import android.content.Context
+import android.content.res.Configuration
 import org.fossify.commons.activities.BaseSimpleActivity
+import org.fossify.commons.helpers.FONT_SIZE_EXTRA_LARGE
+import org.fossify.commons.helpers.FONT_SIZE_LARGE
+import org.fossify.commons.helpers.FONT_SIZE_SMALL
 import org.fossify.voicerecorder.R
+import org.fossify.voicerecorder.extensions.config
+import org.fossify.voicerecorder.helpers.FONT_SCALE_EXTRA_LARGE
+import org.fossify.voicerecorder.helpers.FONT_SCALE_LARGE
+import org.fossify.voicerecorder.helpers.FONT_SCALE_SMALL
 import org.fossify.voicerecorder.helpers.REPOSITORY_NAME
 
 open class SimpleActivity : BaseSimpleActivity() {
+    // Apply the chosen font size globally by scaling the configuration's fontScale, so every
+    // sp-sized text in the app grows/shrinks together (commons only scales per-view).
+    override fun attachBaseContext(newBase: Context) {
+        val multiplier = when (newBase.config.fontSize) {
+            FONT_SIZE_SMALL -> FONT_SCALE_SMALL
+            FONT_SIZE_LARGE -> FONT_SCALE_LARGE
+            FONT_SIZE_EXTRA_LARGE -> FONT_SCALE_EXTRA_LARGE
+            else -> 1f
+        }
+        if (multiplier == 1f) {
+            super.attachBaseContext(newBase)
+        } else {
+            val configuration = Configuration(newBase.resources.configuration)
+            configuration.fontScale = newBase.resources.configuration.fontScale * multiplier
+            super.attachBaseContext(newBase.createConfigurationContext(configuration))
+        }
+    }
+
     override fun getAppIconIDs() = arrayListOf(
         R.mipmap.ic_launcher_red,
         R.mipmap.ic_launcher_pink,

@@ -123,12 +123,13 @@ class RecorderFragment(
     private fun setupColors() {
         val properTextColor = context.getProperTextColor()
         val properPrimaryColor = context.getProperPrimaryColor()
+        val accentColor = context.config.recordingAccentColor
         binding.toggleRecordingButton.apply {
             setImageDrawable(getToggleButtonIcon())
-            background.applyColorFilter(properPrimaryColor)
+            background.applyColorFilter(accentColor)
         }
 
-        binding.recorderVisualizer.chunkColor = properPrimaryColor
+        binding.recorderVisualizer.chunkColor = accentColor
         binding.recordingDuration.setTextColor(properTextColor)
         binding.recorderTranscriptView.setTextColor(properTextColor)
         binding.recorderTabs.setTabTextColors(properTextColor, properPrimaryColor)
@@ -160,7 +161,7 @@ class RecorderFragment(
 
     private fun getToggleButtonIcon(): Drawable = resources.getColoredDrawableWithColor(
         drawableId = R.drawable.ic_record_circle,
-        color = context.getProperPrimaryColor().getContrastColor()
+        color = context.config.recordingAccentColor.getContrastColor()
     )
 
     private fun startRecordingFromUi() {

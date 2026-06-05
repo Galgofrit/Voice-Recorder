@@ -126,4 +126,12 @@ class Config(context: Context) : BaseConfig(context) {
     var playbackSpeed: Float
         get() = prefs.getFloat(PLAYBACK_SPEED, 1f)
         set(playbackSpeed) = prefs.edit { putFloat(PLAYBACK_SPEED, playbackSpeed) }
+
+    // Secondary accent for record/play controls — a classic recording red by default.
+    var recordingAccentColor: Int
+        get() = prefs.getInt(
+            RECORDING_ACCENT_COLOR,
+            context.resources.getColor(R.color.default_recording_accent, context.theme)
+        )
+        set(value) = prefs.edit { putInt(RECORDING_ACCENT_COLOR, value) }
 }

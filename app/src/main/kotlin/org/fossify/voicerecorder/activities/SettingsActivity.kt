@@ -5,9 +5,11 @@ import android.media.MediaRecorder
 import android.os.Bundle
 import android.widget.SeekBar
 import org.fossify.commons.dialogs.ChangeDateTimeFormatDialog
+import org.fossify.commons.dialogs.ColorPickerDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.addLockedLabelIfNeeded
+import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
@@ -16,6 +18,10 @@ import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.humanizePath
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
+import org.fossify.commons.helpers.FONT_SIZE_EXTRA_LARGE
+import org.fossify.commons.helpers.FONT_SIZE_LARGE
+import org.fossify.commons.helpers.FONT_SIZE_MEDIUM
+import org.fossify.commons.helpers.FONT_SIZE_SMALL
 import org.fossify.commons.helpers.IS_CUSTOMIZING_COLORS
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -66,6 +72,8 @@ class SettingsActivity : SimpleActivity() {
 
         setupCustomizeColors()
         setupCustomizeWidgetColors()
+        setupFontSize()
+        setupRecordingAccentColor()
         setupUseEnglish()
         setupLanguage()
         setupChangeDateTimeFormat()
@@ -99,6 +107,45 @@ class SettingsActivity : SimpleActivity() {
     private fun setupCustomizeColors() {
         binding.settingsColorCustomizationHolder.setOnClickListener {
             startCustomizationActivity()
+        }
+    }
+
+    private fun setupFontSize() {
+        binding.settingsFontSize.text = fontSizeLabel()
+        binding.settingsFontSizeHolder.setOnClickListener {
+            val items = arrayListOf(
+                RadioItem(FONT_SIZE_SMALL, getString(org.fossify.commons.R.string.small)),
+                RadioItem(FONT_SIZE_MEDIUM, getString(org.fossify.commons.R.string.medium)),
+                RadioItem(FONT_SIZE_LARGE, getString(org.fossify.commons.R.string.large)),
+                RadioItem(FONT_SIZE_EXTRA_LARGE, getString(org.fossify.commons.R.string.extra_large)),
+            )
+            RadioGroupDialog(this@SettingsActivity, items, config.fontSize) {
+                config.fontSize = it as Int
+                binding.settingsFontSize.text = fontSizeLabel()
+                // Re-run attachBaseContext so the new global font scale takes effect immediately.
+                recreate()
+            }
+        }
+    }
+
+    private fun fontSizeLabel() = getString(
+        when (config.fontSize) {
+            FONT_SIZE_SMALL -> org.fossify.commons.R.string.small
+            FONT_SIZE_LARGE -> org.fossify.commons.R.string.large
+            FONT_SIZE_EXTRA_LARGE -> org.fossify.commons.R.string.extra_large
+            else -> org.fossify.commons.R.string.medium
+        }
+    )
+
+    private fun setupRecordingAccentColor() {
+        binding.settingsRecordingAccentColor.applyColorFilter(config.recordingAccentColor)
+        binding.settingsRecordingAccentHolder.setOnClickListener {
+            ColorPickerDialog(this, config.recordingAccentColor) { wasPositivePressed, color ->
+                if (wasPositivePressed) {
+                    config.recordingAccentColor = color
+                    binding.settingsRecordingAccentColor.applyColorFilter(color)
+                }
+            }
         }
     }
 

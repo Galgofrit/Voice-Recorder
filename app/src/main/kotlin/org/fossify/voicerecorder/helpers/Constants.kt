@@ -107,6 +107,12 @@ const val AUTO_TRANSCRIBE = "auto_transcribe"
 const val TRANSCRIPTION_LANGUAGE = "transcription_language"
 const val TRANSCRIPTION_CHUNK_SECONDS = "transcription_chunk_seconds"
 const val PLAYBACK_SPEED = "playback_speed"
+const val RECORDING_ACCENT_COLOR = "recording_accent_color"
+
+// Font-scale multipliers applied globally per commons font-size setting (medium = 1.0).
+const val FONT_SCALE_SMALL = 0.85f
+const val FONT_SCALE_LARGE = 1.2f
+const val FONT_SCALE_EXTRA_LARGE = 1.4f
 
 const val DEFAULT_RECORDINGS_FOLDER = "Recordings"
 const val DEFAULT_FILENAME_PATTERN = "%Y%M%D_%h%m%s"

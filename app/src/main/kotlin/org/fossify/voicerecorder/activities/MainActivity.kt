@@ -246,9 +246,9 @@ class MainActivity : SimpleActivity() {
 
     private fun setupRecordFab() {
         binding.recordFab.setImageResource(R.drawable.ic_record_circle)
-        val primaryColor = getProperPrimaryColor()
-        binding.recordFab.backgroundTintList = ColorStateList.valueOf(primaryColor)
-        binding.recordFab.imageTintList = ColorStateList.valueOf(primaryColor.getContrastColor())
+        val accentColor = config.recordingAccentColor
+        binding.recordFab.backgroundTintList = ColorStateList.valueOf(accentColor)
+        binding.recordFab.imageTintList = ColorStateList.valueOf(accentColor.getContrastColor())
     }
 
     private fun showScreen(screen: Screen) {
