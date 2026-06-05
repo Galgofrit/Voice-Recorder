@@ -174,40 +174,53 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
     exclude("**/com/whispercpp/**")
 }
 
-// The transcription model is too large to commit (and LFS can't push to a fork),
-// so it's gitignored and downloaded into assets/ at build time. The APK still
-// bundles it exactly as if it were checked in.
+// The transcription + VAD models are too large to commit (and LFS can't push to a fork),
+// so they're gitignored and downloaded into assets/ at build time. The APK still
+// bundles them exactly as if they were checked in.
+fun downloadModel(dest: File, url: String) {
+    dest.parentFile.mkdirs()
+    logger.lifecycle("Downloading model -> $dest")
+    var target = URI(url).toURL()
+    repeat(5) {
+        val connection = target.openConnection() as HttpURLConnection
+        connection.instanceFollowRedirects = true
+        if (connection.responseCode in 300..399) {
+            target = URI(connection.getHeaderField("Location")).toURL()
+            connection.disconnect()
+        } else {
+            connection.inputStream.use { input ->
+                dest.outputStream().use { input.copyTo(it) }
+            }
+            return
+        }
+    }
+    throw GradleException("Failed to download model from $url")
+}
+
 val whisperModelFile = file("src/main/assets/models/ggml-base-q5_1.bin")
 val whisperModelUrl =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
+
+val vadModelFile = file("src/main/assets/models/ggml-silero-v5.1.2.bin")
+val vadModelUrl =
+    "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
 
 val downloadWhisperModel by tasks.registering {
     description = "Downloads the bundled whisper transcription model if it's missing."
     outputs.file(whisperModelFile)
     onlyIf { !whisperModelFile.exists() }
-    doLast {
-        whisperModelFile.parentFile.mkdirs()
-        logger.lifecycle("Downloading whisper model -> $whisperModelFile")
-        var target = URI(whisperModelUrl).toURL()
-        repeat(5) {
-            val connection = target.openConnection() as HttpURLConnection
-            connection.instanceFollowRedirects = true
-            if (connection.responseCode in 300..399) {
-                target = URI(connection.getHeaderField("Location")).toURL()
-                connection.disconnect()
-            } else {
-                connection.inputStream.use { input ->
-                    whisperModelFile.outputStream().use { input.copyTo(it) }
-                }
-                return@doLast
-            }
-        }
-        throw GradleException("Failed to download whisper model from $whisperModelUrl")
-    }
+    doLast { downloadModel(whisperModelFile, whisperModelUrl) }
+}
+
+val downloadVadModel by tasks.registering {
+    description = "Downloads the bundled Silero VAD model if it's missing."
+    outputs.file(vadModelFile)
+    onlyIf { !vadModelFile.exists() }
+    doLast { downloadModel(vadModelFile, vadModelUrl) }
 }
 
 tasks.named("preBuild") {
-    dependsOn(downloadWhisperModel)
+    dependsOn(downloadWhisperModel, downloadVadModel)
 }
 
 dependencies {

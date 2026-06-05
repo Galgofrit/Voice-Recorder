@@ -202,6 +202,40 @@ class WhisperContext private constructor(private var ptr: Long) {
     }
 }
 
+// Silero VAD context. Detects whether audio contains speech, so non-speech windows can be
+// skipped before they ever reach whisper (which would otherwise hallucinate from noise).
+class WhisperVadContext private constructor(private var ptr: Long) {
+    private val scope: CoroutineScope = CoroutineScope(
+        Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+    )
+
+    // {startSample, endSample} of the speech span within [data], or {-1, -1} if no speech.
+    // Falls back to the full clip if the VAD context failed to load.
+    suspend fun speechBounds(data: FloatArray): IntArray = withContext(scope.coroutineContext) {
+        if (ptr == 0L) {
+            return@withContext intArrayOf(0, data.size)
+        }
+        WhisperLib.vadSpeechBounds(ptr, data)
+    }
+
+    suspend fun release() = withContext(scope.coroutineContext) {
+        if (ptr != 0L) {
+            WhisperLib.vadFreeContext(ptr)
+            ptr = 0
+        }
+    }
+
+    companion object {
+        fun createContextFromFile(filePath: String): WhisperVadContext {
+            val ptr = WhisperLib.vadInitContext(filePath, WhisperCpuConfig.preferredThreadCount)
+            if (ptr == 0L) {
+                throw java.lang.RuntimeException("Couldn't create VAD context with path $filePath")
+            }
+            return WhisperVadContext(ptr)
+        }
+    }
+}
+
 private class WhisperLib {
     companion object {
         init {
@@ -271,6 +305,9 @@ private class WhisperLib {
         external fun getSystemInfo(): String
         external fun benchMemcpy(nthread: Int): String
         external fun benchGgmlMulMat(nthread: Int): String
+        external fun vadInitContext(modelPath: String, numThreads: Int): Long
+        external fun vadSpeechBounds(vadPtr: Long, audioData: FloatArray): IntArray
+        external fun vadFreeContext(vadPtr: Long)
     }
 }
 

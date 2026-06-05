@@ -2,6 +2,7 @@ package org.fossify.voicerecorder.transcription
 
 import android.content.Context
 import com.whispercpp.whisper.WhisperContext
+import com.whispercpp.whisper.WhisperVadContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -17,26 +18,38 @@ object TranscriptionEngine {
     private const val MODEL_NAME = "ggml-base-q5_1.bin"
     private const val MODEL_ASSET = "models/$MODEL_NAME"
 
+    // Silero VAD model — gates non-speech audio so whisper never transcribes noise/silence.
+    private const val VAD_MODEL_NAME = "ggml-silero-v5.1.2.bin"
+    private const val VAD_MODEL_ASSET = "models/$VAD_MODEL_NAME"
+
     private val mutex = Mutex()
     private var context: WhisperContext? = null
+    private var vadContext: WhisperVadContext? = null
 
     suspend fun getContext(appContext: Context): WhisperContext = mutex.withLock {
         context ?: run {
-            val modelFile = ensureModel(appContext)
+            val modelFile = ensureModel(appContext, MODEL_NAME, MODEL_ASSET)
             WhisperContext.createContextFromFile(modelFile.absolutePath).also { context = it }
         }
     }
 
-    private fun ensureModel(appContext: Context): File {
-        val outDir = File(appContext.filesDir, "models").apply { mkdirs() }
-        val outFile = File(outDir, MODEL_NAME)
+    suspend fun getVadContext(appContext: Context): WhisperVadContext = mutex.withLock {
+        vadContext ?: run {
+            val modelFile = ensureModel(appContext, VAD_MODEL_NAME, VAD_MODEL_ASSET)
+            WhisperVadContext.createContextFromFile(modelFile.absolutePath).also { vadContext = it }
+        }
+    }
 
-        val expectedSize = appContext.assets.openFd(MODEL_ASSET).use { it.length }
+    private fun ensureModel(appContext: Context, name: String, asset: String): File {
+        val outDir = File(appContext.filesDir, "models").apply { mkdirs() }
+        val outFile = File(outDir, name)
+
+        val expectedSize = appContext.assets.openFd(asset).use { it.length }
         if (outFile.exists() && outFile.length() == expectedSize) {
             return outFile
         }
 
-        appContext.assets.open(MODEL_ASSET).use { input ->
+        appContext.assets.open(asset).use { input ->
             outFile.outputStream().use { output ->
                 input.copyTo(output)
             }

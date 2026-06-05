@@ -186,6 +186,12 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
     params.single_segment = false;
     params.token_timestamps = true; // per-token t0/t1 for word-level read-along
 
+    // Suppress non-speech tokens so the transcript never contains "[MUSIC]", "[CLICKING]",
+    // "(applause)" and similar annotations — we only want spoken words. Non-speech *windows*
+    // are gated up front by Silero VAD, so we leave whisper's own no_speech/logprob thresholds
+    // at their defaults here and don't risk dropping real (quiet) speech that VAD let through.
+    params.suppress_nst = true;
+
     // Disable temperature fallback. On a hard/ambiguous window whisper otherwise re-runs the
     // decoder up to ~6 times at rising temperatures, which (especially with token repetition)
     // makes a single window blow up from <1s to 15s+. For live transcription bounded latency
@@ -336,6 +342,68 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenT1(
     UNUSED(thiz);
     struct whisper_context *context = (struct whisper_context *) context_ptr;
     return whisper_full_get_token_data(context, segment, token).t1;
+}
+
+// --- Voice Activity Detection (Silero VAD) -------------------------------------------------
+// Used to gate non-speech audio: a window with no detected speech is never sent to the
+// transcriber, so whisper can't hallucinate words out of noise/silence/clicks.
+
+JNIEXPORT jlong JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadInitContext(
+        JNIEnv *env, jobject thiz, jstring model_path, jint num_threads) {
+    UNUSED(thiz);
+    const char *path = (*env)->GetStringUTFChars(env, model_path, NULL);
+    struct whisper_vad_context_params cparams = whisper_vad_default_context_params();
+    cparams.n_threads = num_threads;
+    cparams.use_gpu = false;
+    struct whisper_vad_context *vctx = whisper_vad_init_from_file_with_params(path, cparams);
+    (*env)->ReleaseStringUTFChars(env, model_path, path);
+    return (jlong) vctx;
+}
+
+// Returns {startSample, endSample} spanning from the first detected speech segment to the
+// last (16kHz sample indices into the input), or {-1, -1} if no speech is found. The caller
+// trims the window to this range so whisper never sees the silent head/tail that makes it
+// replay phrases. VAD segment times are centiseconds; cs/100*sample_rate -> samples.
+JNIEXPORT jintArray JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadSpeechBounds(
+        JNIEnv *env, jobject thiz, jlong vad_ptr, jfloatArray audio_data) {
+    UNUSED(thiz);
+    struct whisper_vad_context *vctx = (struct whisper_vad_context *) vad_ptr;
+    jfloat *samples = (*env)->GetFloatArrayElements(env, audio_data, NULL);
+    const jsize n = (*env)->GetArrayLength(env, audio_data);
+
+    struct whisper_vad_params vparams = whisper_vad_default_params();
+    struct whisper_vad_segments *segs =
+            whisper_vad_segments_from_samples(vctx, vparams, samples, n);
+    const int n_segs = segs ? whisper_vad_segments_n_segments(segs) : 0;
+
+    jint bounds[2];
+    if (n_segs > 0) {
+        const float t0_cs = whisper_vad_segments_get_segment_t0(segs, 0);
+        const float t1_cs = whisper_vad_segments_get_segment_t1(segs, n_segs - 1);
+        bounds[0] = (jint) (t0_cs / 100.0 * WHISPER_SAMPLE_RATE);
+        bounds[1] = (jint) (t1_cs / 100.0 * WHISPER_SAMPLE_RATE);
+    } else {
+        bounds[0] = -1;
+        bounds[1] = -1;
+    }
+    if (segs) {
+        whisper_vad_free_segments(segs);
+    }
+    (*env)->ReleaseFloatArrayElements(env, audio_data, samples, JNI_ABORT);
+
+    jintArray out = (*env)->NewIntArray(env, 2);
+    (*env)->SetIntArrayRegion(env, out, 0, 2, bounds);
+    return out;
+}
+
+JNIEXPORT void JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadFreeContext(
+        JNIEnv *env, jobject thiz, jlong vad_ptr) {
+    UNUSED(env);
+    UNUSED(thiz);
+    whisper_vad_free((struct whisper_vad_context *) vad_ptr);
 }
 
 JNIEXPORT jstring JNICALL

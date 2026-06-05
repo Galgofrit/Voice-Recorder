@@ -43,10 +43,23 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         private const val PCM16_FULL_SCALE = 32768f
         private const val MS_PER_SECOND = 1000L
 
+        // Padding kept around the VAD speech span when trimming a window (samples @ 16kHz),
+        // so we never clip the onset/tail of a word. 0.2s.
+        private const val VAD_PAD_SAMPLES = 3200
+
         // Seam dedup: how many words at the join to check, and how close in time two identical
         // words must be to count as the same spoken instance (vs a genuine repeated word).
         private const val MAX_SEAM_WORDS = 12
         private const val SEAM_TOLERANCE_MS = 1000L
+
+        // Repetition-loop guard: a window with at least this many words whose distinct-word
+        // ratio is below the threshold is treated as a hallucinated decode loop and dropped.
+        private const val MIN_WORDS_FOR_LOOP_CHECK = 6
+        private const val MIN_WORD_DIVERSITY = 0.35f
+
+        // Smallest immediately-repeated block (in words) collapsed as a whisper fill-repeat;
+        // below this we leave repeats alone so genuine short ones ("very very") survive.
+        private const val MIN_LOOP_PHRASE = 3
     }
 
     // A window of audio handed to whisper, tagged with the absolute time (ms into the
@@ -153,22 +166,54 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
             if (audio.isEmpty()) {
                 return
             }
+            // Gate on voice activity: if VAD finds no speech in the window, never hand it to
+            // whisper — that's how noise/silence/clicks are stopped from becoming hallucinated
+            // text. Anything already captured in the overlap stays put.
+            val bounds = TranscriptionEngine.getVadContext(context).speechBounds(audio)
+            if (bounds[0] < 0) {
+                Log.i(TAG, "Window @ ${segment.startMs}ms skipped, no speech (VAD)")
+                return
+            }
+            // Trim to the speech span (with a little padding) so whisper never sees the silent
+            // head/tail it would otherwise "fill" by replaying a phrase. Word timestamps from
+            // the trimmed clip are shifted back by the trim offset.
+            val trimStart = (bounds[0] - VAD_PAD_SAMPLES).coerceAtLeast(0)
+            val trimEnd = (bounds[1] + VAD_PAD_SAMPLES).coerceAtMost(audio.size)
+            val speech = audio.copyOfRange(trimStart, trimEnd)
+            val offsetMs = segment.startMs + trimStart * MS_PER_SECOND / TARGET_RATE
+
             val whisper = TranscriptionEngine.getContext(context)
             val started = System.currentTimeMillis()
-            val result = whisper.transcribeWithWords(audio, language = language)
+            val result = whisper.transcribeWithWords(speech, language = language)
             Log.i(
                 TAG,
-                "Window (${audio.size / TARGET_RATE}s @ ${segment.startMs}ms) transcribed in " +
+                "Window (${speech.size / TARGET_RATE}s @ ${segment.startMs}ms) transcribed in " +
                     "${System.currentTimeMillis() - started}ms"
             )
-            // Re-transcribing the overlap supersedes whatever we'd committed for that region,
-            // so drop the old words there and re-append the whole window. Words before the
-            // window start (earlier, already-final audio) are left untouched.
-            words.removeAll { it.startMs >= segment.startMs }
-            val windowWords = result.words.map {
-                Word(it.text, it.startMs + segment.startMs, it.endMs + segment.startMs)
+            val rawWords = result.words.map {
+                Word(it.text, it.startMs + offsetMs, it.endMs + offsetMs)
             }
-            words.addAll(windowWords.drop(seamOverlap(words, windowWords)))
+            // whisper sometimes repeats a phrase to "fill" a window that ends in silence
+            // ("…before Monday. …before Monday."); collapse an immediately-repeated trailing
+            // block so the doubling never reaches the transcript.
+            val windowWords = collapseTrailingRepeat(rawWords)
+            // Drop a window whose text is degenerate repetition (a greedy decode loop) — it's a
+            // hallucination, not speech, and the overlapping next window will re-cover the audio.
+            if (isRepetitionLoop(windowWords)) {
+                Log.i(TAG, "Window @ ${segment.startMs}ms dropped, repetition loop")
+                return
+            }
+            // Re-transcribing the overlap supersedes whatever we'd committed for that region,
+            // so drop the old words from where this window's speech actually begins and
+            // re-append. Words before that (earlier, already-final audio) are left untouched.
+            words.removeAll { it.startMs >= offsetMs }
+            val seamDropped = seamOverlap(words, windowWords)
+            Log.i(
+                TAG,
+                "Window @${segment.startMs}ms seamDrop=$seamDropped " +
+                    "raw=\"${rawWords.joinToString("") { it.text }.trim()}\""
+            )
+            words.addAll(windowWords.drop(seamDropped))
             EventBus.getDefault().post(Events.LiveTranscription(currentText()))
             // Persist progress as we go, so stopping never waits on a backlog and a crash
             // can't lose what's been transcribed.
@@ -197,14 +242,10 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
     }
 
     private fun isSeamDuplicate(a: Word, b: Word): Boolean {
-        // Primary signal is time: if the two words occupy nearly the same slot, they're the
-        // same spoken instance — robust even when the windows transcribe it differently. Text
-        // equality is a fallback for when the timing estimates drift apart.
-        val overlapMs = minOf(a.endMs, b.endMs) - maxOf(a.startMs, b.startMs)
-        val shorterMs = minOf(a.endMs - a.startMs, b.endMs - b.startMs).coerceAtLeast(1)
-        if (overlapMs * 2 > shorterMs) {
-            return true
-        }
+        // Same spoken word only if the text matches and it lands at about the same point in
+        // time. We deliberately do NOT treat mere time-overlap as a duplicate: across windows
+        // with different trim offsets, two *different* adjacent words ("and" / "that") can
+        // overlap in time, and matching them would wrongly delete a correct word at the seam.
         val na = normalizeWord(a.text)
         return na.isNotEmpty() &&
             na == normalizeWord(b.text) &&
@@ -213,6 +254,45 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
 
     private fun normalizeWord(text: String) =
         text.trim().lowercase().trim { !it.isLetterOrDigit() }
+
+    // Trims an immediately-repeated trailing block of words ("…X X" -> "…X"), which is how
+    // whisper pads a window that ends in silence by replaying its last phrase. Only blocks of
+    // at least MIN_LOOP_PHRASE words are collapsed, so genuine short repeats ("very very") are
+    // left alone. Loops until stable, so "X X X" collapses fully.
+    private fun collapseTrailingRepeat(words: List<Word>): List<Word> {
+        val result = words.toMutableList()
+        var changed = true
+        while (changed) {
+            changed = false
+            val n = result.size
+            for (p in n / 2 downTo MIN_LOOP_PHRASE) {
+                val isRepeat = (0 until p).all {
+                    normalizeWord(result[n - p + it].text) == normalizeWord(result[n - 2 * p + it].text)
+                }
+                if (isRepeat) {
+                    repeat(p) { result.removeAt(result.size - 1) }
+                    changed = true
+                    break
+                }
+            }
+        }
+        return result
+    }
+
+    // A whisper greedy-decode loop shows up as a window with many words but very few distinct
+    // ones (e.g. "ok ok ok ok…" or "the cat the cat the cat"). Real speech is far more varied,
+    // so a low distinct-word ratio over enough words flags a hallucinated repetition.
+    private fun isRepetitionLoop(windowWords: List<Word>): Boolean {
+        if (windowWords.size < MIN_WORDS_FOR_LOOP_CHECK) {
+            return false
+        }
+        val normalized = windowWords.map { normalizeWord(it.text) }.filter { it.isNotEmpty() }
+        if (normalized.size < MIN_WORDS_FOR_LOOP_CHECK) {
+            return false
+        }
+        val diversity = normalized.distinct().size.toFloat() / normalized.size
+        return diversity < MIN_WORD_DIVERSITY
+    }
 
     private fun currentText() = words.joinToString("") { it.text }.trim()
 
