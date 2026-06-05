@@ -1,13 +1,20 @@
 package org.fossify.voicerecorder.transcription
 
 import android.content.Context
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
 import android.util.Log
+import androidx.core.graphics.ColorUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import org.fossify.commons.extensions.getFormattedDuration
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.voicerecorder.databases.TranscriptDatabase
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.helpers.MAX_TRANSCRIPTION_CHUNK_SECONDS
@@ -16,6 +23,7 @@ import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
 import org.fossify.voicerecorder.models.Transcript
 import org.fossify.voicerecorder.models.Word
+import org.fossify.voicerecorder.models.needsTimestamp
 import org.greenrobot.eventbus.EventBus
 
 /**
@@ -40,6 +48,9 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         // Tentative trailing marker shown while the speaker is paused mid-thought; dropped once
         // the next clip continues the sentence, kept only if speech never resumes.
         private const val ELLIPSIS = "…"
+
+        // 60% opacity (0..255) for timestamp markers — matches the player's dimmed look.
+        private const val TIMESTAMP_ALPHA = 153
 
         // Extra seconds beyond the (slider) target before a continuous, gapless run of speech is
         // force-cut mid-word with an overlap stitch.
@@ -267,7 +278,7 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
                 val lastMs = words.last().endMs
                 words.add(Word(" $ELLIPSIS", lastMs, lastMs))
             }
-            EventBus.getDefault().post(Events.LiveTranscription(currentText()))
+            EventBus.getDefault().post(Events.LiveTranscription(displayText()))
             saveTranscript()
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             Log.e(TAG, "Live emit transcription failed", e)
@@ -340,6 +351,37 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
     private fun samplesToMs(samples: Int) = samples.toLong() * MS_PER_SECOND / TARGET_RATE
 
     private fun currentText() = words.joinToString("") { it.text }.trim()
+
+    // Same words as [currentText] but with timestamp markers inserted at long pauses (and at the
+    // start), styled small + dimmed to match the player. The stored transcript stays clean.
+    private fun displayText(): CharSequence {
+        val builder = SpannableStringBuilder()
+        val timestampColor = ColorUtils.setAlphaComponent(context.getProperTextColor(), TIMESTAMP_ALPHA)
+        val timestampSize =
+            context.resources.getDimensionPixelSize(org.fossify.commons.R.dimen.smaller_text_size)
+        var prevEndMs = 0L
+        words.forEachIndexed { index, word ->
+            if (needsTimestamp(index, prevEndMs, word.startMs)) {
+                if (builder.isNotEmpty()) {
+                    builder.append("\n")
+                }
+                val tsStart = builder.length
+                builder.append((word.startMs / MS_PER_SECOND).toInt().getFormattedDuration())
+                builder.setSpan(
+                    AbsoluteSizeSpan(timestampSize), tsStart, builder.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                builder.setSpan(
+                    ForegroundColorSpan(timestampColor), tsStart, builder.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                builder.append("\n")
+            }
+            prevEndMs = word.endMs
+            builder.append(word.text)
+        }
+        return builder
+    }
 
     private fun saveTranscript() {
         try {

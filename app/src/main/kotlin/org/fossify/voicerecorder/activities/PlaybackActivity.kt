@@ -15,6 +15,7 @@ import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
 import android.text.method.LinkMovementMethod
+import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ClickableSpan
 import android.text.style.ForegroundColorSpan
@@ -58,6 +59,7 @@ import org.fossify.voicerecorder.models.TRANSCRIPT_FAILED
 import org.fossify.voicerecorder.models.TRANSCRIPT_PROCESSING
 import org.fossify.voicerecorder.models.Transcript
 import org.fossify.voicerecorder.models.Word
+import org.fossify.voicerecorder.models.needsTimestamp
 import org.fossify.voicerecorder.receivers.BecomingNoisyReceiver
 import org.fossify.voicerecorder.transcription.TranscriptionWorker
 import org.fossify.voicerecorder.transcription.WhisperLanguages
@@ -85,6 +87,9 @@ class PlaybackActivity : SimpleActivity() {
         private const val WAVEFORM_BARS_PER_SECOND = 12
         private const val WAVEFORM_UNPLAYED_ALPHA = 0.3f
         private const val CARD_TINT_RATIO = 0.05f
+
+        // 60% opacity (0..255) — matches the transcript language label's dimmed look.
+        private const val TIMESTAMP_ALPHA = 153
         private const val WAVEFORM_BARS_PER_CHUNK = 240
     }
 
@@ -606,7 +611,27 @@ class PlaybackActivity : SimpleActivity() {
     private fun showReadAlong(wordList: List<Word>) {
         val builder = SpannableStringBuilder()
         val ranges = ArrayList<IntRange>(wordList.size)
+        val timestampColor = ColorUtils.setAlphaComponent(getProperTextColor(), TIMESTAMP_ALPHA)
+        val timestampSize = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.smaller_text_size)
+        var prevEndMs = 0L
         wordList.forEachIndexed { index, word ->
+            if (needsTimestamp(index, prevEndMs, word.startMs)) {
+                if (builder.isNotEmpty()) {
+                    builder.append("\n")
+                }
+                val tsStart = builder.length
+                builder.append((word.startMs / MS_PER_SECOND).toInt().getFormattedDuration())
+                builder.setSpan(
+                    AbsoluteSizeSpan(timestampSize), tsStart, builder.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                builder.setSpan(
+                    ForegroundColorSpan(timestampColor), tsStart, builder.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                builder.append("\n")
+            }
+            prevEndMs = word.endMs
             val rawStart = builder.length
             builder.append(word.text)
             val visibleStart = rawStart + word.text.takeWhile { it == ' ' }.length
