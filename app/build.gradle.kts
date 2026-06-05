@@ -197,9 +197,9 @@ fun downloadModel(dest: File, url: String) {
     throw GradleException("Failed to download model from $url")
 }
 
-val whisperModelFile = file("src/main/assets/models/ggml-base-q5_1.bin")
+val whisperModelFile = file("src/main/assets/models/ggml-small-q5_1.bin")
 val whisperModelUrl =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"
 
 val vadModelFile = file("src/main/assets/models/ggml-silero-v5.1.2.bin")
 val vadModelUrl =

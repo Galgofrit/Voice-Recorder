@@ -17,18 +17,15 @@ import org.fossify.voicerecorder.models.TRANSCRIPT_DONE
 import org.fossify.voicerecorder.models.Transcript
 import org.fossify.voicerecorder.models.Word
 import org.greenrobot.eventbus.EventBus
-import kotlin.math.abs
 
 /**
- * Transcribes a recording live, while it's being recorded. PCM is fed in via [feed]; once
- * ~[chunkSeconds] of new audio has accumulated, a window of that audio plus the previous
- * ~[OVERLAP_SECONDS] is handed to whisper on a background worker, and the growing transcript
- * is broadcast ([Events.LiveTranscription]). On [finish] the tail is transcribed and the
- * result saved to the transcript DB, so playback needs no extra work.
- *
- * The overlap gives whisper context across chunk boundaries so words spoken across a cut
- * aren't chopped; each window re-transcribes the carried-over region and replaces the
- * previously committed words there (keyed by timestamp), so the overlap is never duplicated.
+ * Transcribes a recording live, while it's being recorded. PCM is fed in via [feed] and
+ * accumulated into a rolling 16kHz buffer. A background consumer runs VAD over the buffer and
+ * closes a window at a silence gap between words, so a boundary never bisects a word — the
+ * completed speech is transcribed and the in-progress tail is carried forward. Only when there
+ * is no gap at all for [capSeconds] of continuous sound do we force a cut, carrying a short
+ * overlap and text-deduping the join. The growing transcript is broadcast
+ * ([Events.LiveTranscription]); on [finish] the tail is flushed and saved to the transcript DB.
  *
  * Transcription failures never propagate to the recorder — the recording is untouchable.
  */
@@ -36,21 +33,31 @@ import kotlin.math.abs
 class LiveTranscriber(private val context: Context, private val recordingName: String) {
     companion object {
         private const val TAG = "LiveTranscriber"
-
-        // How much of the previous window is carried over for cross-boundary context.
-        private const val OVERLAP_SECONDS = 3
         private const val TARGET_RATE = 16000
         private const val PCM16_FULL_SCALE = 32768f
         private const val MS_PER_SECOND = 1000L
 
-        // Padding kept around the VAD speech span when trimming a window (samples @ 16kHz),
-        // so we never clip the onset/tail of a word. 0.2s.
-        private const val VAD_PAD_SAMPLES = 3200
+        // Tentative trailing marker shown while the speaker is paused mid-thought; dropped once
+        // the next clip continues the sentence, kept only if speech never resumes.
+        private const val ELLIPSIS = "…"
 
-        // Seam dedup: how many words at the join to check, and how close in time two identical
-        // words must be to count as the same spoken instance (vs a genuine repeated word).
-        private const val MAX_SEAM_WORDS = 12
-        private const val SEAM_TOLERANCE_MS = 1000L
+        // Extra seconds beyond the (slider) target before a continuous, gapless run of speech is
+        // force-cut mid-word with an overlap stitch.
+        private const val CAP_EXTRA_SECONDS = 7
+
+        // Trailing silence (samples @16kHz) after the last speech segment that marks the speaker
+        // as having paused, so all buffered speech can be emitted. 0.3s.
+        private const val COMPLETE_SILENCE_SAMPLES = 4800
+
+        // Overlap carried past a forced (mid-word) cut so the next window can re-capture the cut
+        // word; the join is text-deduped. 1.5s.
+        private const val FORCED_OVERLAP_SAMPLES = 24000
+
+        // Don't re-run VAD until at least this much new audio has arrived (samples @16kHz). 1s.
+        private const val VAD_THROTTLE_SAMPLES = 16000
+
+        // Max words checked when deduping a forced-cut overlap join.
+        private const val MAX_STITCH_WORDS = 12
 
         // Repetition-loop guard: a window with at least this many words whose distinct-word
         // ratio is below the threshold is treated as a hallucinated decode loop and dropped.
@@ -62,60 +69,57 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         private const val MIN_LOOP_PHRASE = 3
     }
 
-    // A window of audio handed to whisper, tagged with the absolute time (ms into the
-    // recording) at which the window starts, so word timestamps can be mapped back.
-    private class Segment(val audio: ShortArray, val startMs: Long)
+    // Where to cut the rolling buffer: emit [emitStart, emitEnd), then drop everything up to
+    // [consumeUntil) (the rest is carried forward). [forced] marks a mid-word cap cut whose
+    // carried overlap must be text-deduped against the committed words on the next emit.
+    private class Cut(
+        val emitStart: Int,
+        val emitEnd: Int,
+        val consumeUntil: Int,
+        val forced: Boolean,
+    )
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val chunks = Channel<Segment>(Channel.UNLIMITED)
+    private val chunks = Channel<ShortArray>(Channel.UNLIMITED)
     private var consumerJob: Job? = null
     private val language = context.config.transcriptionLanguage
 
-    // Seconds of new audio per window — user-configurable; latency to first text ≈ this.
-    private val chunkSeconds = context.config.transcriptionChunkSeconds
+    // Target seconds of audio gathered before we look for a gap to cut at (≈ emit cadence).
+    private val targetSeconds = context.config.transcriptionChunkSeconds
         .coerceIn(MIN_TRANSCRIPTION_CHUNK_SECONDS, MAX_TRANSCRIPTION_CHUNK_SECONDS)
+    private val capSeconds = targetSeconds + CAP_EXTRA_SECONDS
 
-    // PCM accumulated (at the source rate) until it makes up a chunk, plus the tail of the
-    // previous chunk carried over as overlap. Guarded because [feed] runs on the recording
-    // thread while [finish] drains from a coroutine.
-    private val pending = ArrayList<ShortArray>()
-    private var pendingCount = 0
-    private var carry = ShortArray(0)
-    private var committedMs = 0L
+    // Rolling buffer of not-yet-emitted audio (16kHz mono) and its absolute start time. Only
+    // touched by the single consumer coroutine, so it needs no locking.
+    private var buffer = FloatArray(0)
+    private var bufferStartMs = 0L
+    private var lastVadSamples = 0
+    private var pendingStitch = false
+
     private var sourceRate = TARGET_RATE
-
     private val words = ArrayList<Word>()
+    private val ellipsisDots = Regex("\\.{2,}")
 
     fun start() {
         consumerJob = scope.launch {
-            for (segment in chunks) {
-                transcribeSegment(segment)
+            for (chunk in chunks) {
+                appendChunk(chunk)
+                drainBuffer(flush = false)
             }
+            drainBuffer(flush = true)
         }
     }
 
     fun feed(samples: ShortArray, count: Int, sampleRate: Int) {
         sourceRate = sampleRate
-        val chunkSamples = sampleRate * chunkSeconds
-        val segment = synchronized(pending) {
-            pending.add(samples.copyOf(count))
-            pendingCount += count
-            if (pendingCount >= chunkSamples) takeSegment() else null
-        }
-        if (segment != null) {
-            chunks.trySend(segment)
-        }
+        chunks.trySend(samples.copyOf(count))
     }
 
-    // Stops accepting audio, transcribes whatever is left, saves the transcript, then cleans
-    // up. [onComplete] runs after the result is persisted.
+    // Stops accepting audio, flushes whatever is left, saves the transcript, then cleans up.
+    // [onComplete] runs after the result is persisted.
     fun finish(onComplete: () -> Unit) {
         scope.launch {
             try {
-                val tail = synchronized(pending) { takeSegment() }
-                if (tail != null) {
-                    runCatching { chunks.send(tail) }
-                }
                 runCatching { chunks.close() }
                 consumerJob?.join()
             } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
@@ -132,106 +136,152 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         scope.coroutineContext[Job]?.cancel()
     }
 
-    // Builds the next window: the carried-over overlap followed by the new pending audio.
-    // Advances [committedMs] by the new audio and keeps its tail as the next overlap.
-    // Caller must hold the [pending] lock.
-    private fun takeSegment(): Segment? {
-        if (pendingCount == 0) {
-            return null
+    private fun appendChunk(chunk: ShortArray) {
+        val resampled = resampleToFloat(chunk, sourceRate)
+        if (resampled.isEmpty()) {
+            return
         }
-        val fresh = ShortArray(pendingCount)
-        var offset = 0
-        for (part in pending) {
-            part.copyInto(fresh, offset)
-            offset += part.size
-        }
-        pending.clear()
-        pendingCount = 0
-
-        val window = ShortArray(carry.size + fresh.size)
-        carry.copyInto(window, 0)
-        fresh.copyInto(window, carry.size)
-        val windowStartMs = committedMs - carry.size * MS_PER_SECOND / sourceRate
-
-        committedMs += fresh.size * MS_PER_SECOND / sourceRate
-        val overlapSamples = (OVERLAP_SECONDS * sourceRate).coerceAtMost(fresh.size)
-        carry = fresh.copyOfRange(fresh.size - overlapSamples, fresh.size)
-
-        return Segment(window, windowStartMs)
+        val grown = FloatArray(buffer.size + resampled.size)
+        buffer.copyInto(grown, 0)
+        resampled.copyInto(grown, buffer.size)
+        buffer = grown
     }
 
-    private suspend fun transcribeSegment(segment: Segment) {
-        try {
-            val audio = resampleToFloat(segment.audio, sourceRate)
-            if (audio.isEmpty()) {
-                return
+    // Emits as many windows as the buffer currently allows. [flush] forces out the remainder
+    // regardless of length (used at the end of the recording).
+    private suspend fun drainBuffer(flush: Boolean) {
+        while (buffer.isNotEmpty()) {
+            if (!flush) {
+                if (samplesToMs(buffer.size) < targetSeconds * MS_PER_SECOND) {
+                    return
+                }
+                if (buffer.size - lastVadSamples < VAD_THROTTLE_SAMPLES) {
+                    return
+                }
             }
-            // Gate on voice activity: if VAD finds no speech in the window, never hand it to
-            // whisper — that's how noise/silence/clicks are stopped from becoming hallucinated
-            // text. Anything already captured in the overlap stays put.
-            val bounds = TranscriptionEngine.getVadContext(context).speechBounds(audio)
-            if (bounds[0] < 0) {
-                Log.i(TAG, "Window @ ${segment.startMs}ms skipped, no speech (VAD)")
-                return
-            }
-            // Trim to the speech span (with a little padding) so whisper never sees the silent
-            // head/tail it would otherwise "fill" by replaying a phrase. Word timestamps from
-            // the trimmed clip are shifted back by the trim offset.
-            val trimStart = (bounds[0] - VAD_PAD_SAMPLES).coerceAtLeast(0)
-            val trimEnd = (bounds[1] + VAD_PAD_SAMPLES).coerceAtMost(audio.size)
-            val speech = audio.copyOfRange(trimStart, trimEnd)
-            val offsetMs = segment.startMs + trimStart * MS_PER_SECOND / TARGET_RATE
+            lastVadSamples = buffer.size
 
+            val segments = TranscriptionEngine.getVadContext(context).segments(buffer)
+            val cut = decideCut(segments, buffer.size, flush) ?: return
+
+            val stitch = pendingStitch
+            if (cut.emitStart < cut.emitEnd) {
+                emit(
+                    clip = buffer.copyOfRange(cut.emitStart, cut.emitEnd),
+                    offsetMs = bufferStartMs + samplesToMs(cut.emitStart),
+                    stitch = stitch,
+                )
+            }
+            bufferStartMs += samplesToMs(cut.consumeUntil)
+            buffer = buffer.copyOfRange(cut.consumeUntil, buffer.size)
+            lastVadSamples = buffer.size
+            pendingStitch = cut.forced
+        }
+    }
+
+    // Decides where to cut, given VAD speech segments (flat sample-index pairs) over a buffer of
+    // [length] samples. Returns null to keep accumulating.
+    @Suppress("ReturnCount")
+    private fun decideCut(segments: IntArray, length: Int, flush: Boolean): Cut? {
+        val segCount = segments.size / 2
+        if (segCount == 0) {
+            // No speech: drop the silence but keep ~1s tail in case a word is just beginning.
+            return Cut(0, 0, (length - TARGET_RATE).coerceAtLeast(0), forced = false)
+        }
+
+        val firstStart = segments[0]
+        val lastEnd = segments[2 * (segCount - 1) + 1]
+
+        if (flush) {
+            return Cut(firstStart, lastEnd, length, forced = false)
+        }
+
+        // Speaker paused after the last segment -> everything buffered is complete speech.
+        if (length - lastEnd >= COMPLETE_SILENCE_SAMPLES) {
+            return Cut(firstStart, lastEnd, length, forced = false)
+        }
+
+        // Buffer ends mid-speech. If there's an earlier completed segment, emit up to it and
+        // carry the in-progress last segment (cut falls in the gap between them — safe).
+        if (segCount >= 2) {
+            val lastCompletedEnd = segments[2 * (segCount - 2) + 1]
+            val inProgressStart = segments[2 * (segCount - 1)]
+            return Cut(firstStart, lastCompletedEnd, inProgressStart, forced = false)
+        }
+
+        // One continuous in-progress segment. Wait for a gap unless we've hit the cap, in which
+        // case force a mid-word cut and carry an overlap for stitching.
+        if (length >= capSeconds * TARGET_RATE) {
+            val overlap = FORCED_OVERLAP_SAMPLES.coerceAtMost(length / 2)
+            return Cut(firstStart, length, length - overlap, forced = true)
+        }
+        return null
+    }
+
+    private suspend fun emit(clip: FloatArray, offsetMs: Long, stitch: Boolean) {
+        try {
             val whisper = TranscriptionEngine.getContext(context)
             val started = System.currentTimeMillis()
-            val result = whisper.transcribeWithWords(speech, language = language)
-            Log.i(
-                TAG,
-                "Window (${speech.size / TARGET_RATE}s @ ${segment.startMs}ms) transcribed in " +
-                    "${System.currentTimeMillis() - started}ms"
-            )
+            val result = whisper.transcribeWithWords(clip, language = language)
             val rawWords = result.words.map {
                 Word(it.text, it.startMs + offsetMs, it.endMs + offsetMs)
             }
-            // whisper sometimes repeats a phrase to "fill" a window that ends in silence
-            // ("…before Monday. …before Monday."); collapse an immediately-repeated trailing
-            // block so the doubling never reaches the transcript.
-            val windowWords = collapseTrailingRepeat(rawWords)
-            // Drop a window whose text is degenerate repetition (a greedy decode loop) — it's a
-            // hallucination, not speech, and the overlapping next window will re-cover the audio.
-            if (isRepetitionLoop(windowWords)) {
-                Log.i(TAG, "Window @ ${segment.startMs}ms dropped, repetition loop")
-                return
-            }
-            // Re-transcribing the overlap supersedes whatever we'd committed for that region,
-            // so drop the old words from where this window's speech actually begins and
-            // re-append. Words before that (earlier, already-final audio) are left untouched.
-            words.removeAll { it.startMs >= offsetMs }
-            val seamDropped = seamOverlap(words, windowWords)
             Log.i(
                 TAG,
-                "Window @${segment.startMs}ms seamDrop=$seamDropped " +
-                    "raw=\"${rawWords.joinToString("") { it.text }.trim()}\""
+                "Emit (${clip.size / TARGET_RATE}s @ ${offsetMs}ms, stitch=$stitch) in " +
+                    "${System.currentTimeMillis() - started}ms raw=\"" +
+                    "${rawWords.joinToString("") { it.text }.trim()}\""
             )
-            words.addAll(windowWords.drop(seamDropped))
+            // Check the raw output for a decode loop *before* collapsing — collapse would
+            // shrink "X X X…" down to one "X" and hide the degeneracy. A looped window is a
+            // hallucination (short phrase repeated many times), so drop it entirely.
+            if (isRepetitionLoop(rawWords)) {
+                Log.i(TAG, "Emit @${offsetMs}ms dropped, repetition loop")
+                return
+            }
+            // The clip may trail off into a "…" (the speaker pausing to think). Strip ellipses
+            // from the committed words, but remember whether this clip ended on one so we can
+            // keep a single tentative "…" at the live end — it's dropped automatically when the
+            // next clip continues the sentence, and only survives if speech never resumes.
+            val endedThinking = rawWords.isNotEmpty() && rawWords.last().text.trim().let {
+                it.endsWith("…") || it.endsWith("..")
+            }
+            val clean = rawWords
+                .map { Word(stripEllipsis(it.text), it.startMs, it.endMs) }
+                .filter { it.text.isNotBlank() }
+            val windowWords = collapseTrailingRepeat(clean)
+
+            // A continuation arrived, so drop the previous tentative "…" before stitching.
+            if (words.lastOrNull()?.text?.trim() == ELLIPSIS) {
+                words.removeAt(words.size - 1)
+            }
+            // Only a forced (mid-word) cut overlaps already-committed audio, so dedup the join
+            // there; normal cuts fall in silence and append cleanly.
+            val toAdd = if (stitch) {
+                windowWords.drop(leadingDuplicateCount(words, windowWords))
+            } else {
+                windowWords
+            }
+            words.addAll(toAdd)
+            if (endedThinking && words.isNotEmpty()) {
+                val lastMs = words.last().endMs
+                words.add(Word(" $ELLIPSIS", lastMs, lastMs))
+            }
             EventBus.getDefault().post(Events.LiveTranscription(currentText()))
-            // Persist progress as we go, so stopping never waits on a backlog and a crash
-            // can't lose what's been transcribed.
             saveTranscript()
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            Log.e(TAG, "Live window transcription failed", e)
+            Log.e(TAG, "Live emit transcription failed", e)
         }
     }
 
-    // Number of leading [incoming] words that duplicate the trailing [committed] words at the
-    // seam (same word picked up by both the previous window's tail and this window's overlap).
-    // Returns the largest run length k (0..MAX_SEAM_WORDS) such that the last k committed words
-    // match the first k incoming words by text and lie at about the same point in time.
-    private fun seamOverlap(committed: List<Word>, incoming: List<Word>): Int {
-        var k = minOf(committed.size, incoming.size, MAX_SEAM_WORDS)
+    // Largest run k (0..MAX_STITCH_WORDS) where the last k committed words equal the first k
+    // incoming words by normalized text — the duplicated overlap to drop from a forced join.
+    private fun leadingDuplicateCount(committed: List<Word>, incoming: List<Word>): Int {
+        var k = minOf(committed.size, incoming.size, MAX_STITCH_WORDS)
         while (k > 0) {
             val matched = (0 until k).all {
-                isSeamDuplicate(committed[committed.size - k + it], incoming[it])
+                val c = normalizeWord(committed[committed.size - k + it].text)
+                c.isNotEmpty() && c == normalizeWord(incoming[it].text)
             }
             if (matched) {
                 return k
@@ -241,24 +291,18 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         return 0
     }
 
-    private fun isSeamDuplicate(a: Word, b: Word): Boolean {
-        // Same spoken word only if the text matches and it lands at about the same point in
-        // time. We deliberately do NOT treat mere time-overlap as a duplicate: across windows
-        // with different trim offsets, two *different* adjacent words ("and" / "that") can
-        // overlap in time, and matching them would wrongly delete a correct word at the seam.
-        val na = normalizeWord(a.text)
-        return na.isNotEmpty() &&
-            na == normalizeWord(b.text) &&
-            abs(b.startMs - a.startMs) <= SEAM_TOLERANCE_MS
-    }
-
     private fun normalizeWord(text: String) =
         text.trim().lowercase().trim { !it.isLetterOrDigit() }
 
+    // Removes ellipses ("…" or a run of 2+ dots) while keeping single periods (real sentence
+    // ends). whisper sprinkles these onto clips it sees as unfinished, which is most of them
+    // once VAD cuts at thinking-pauses.
+    private fun stripEllipsis(text: String) =
+        text.replace("…", "").replace(ellipsisDots, "")
+
     // Trims an immediately-repeated trailing block of words ("…X X" -> "…X"), which is how
-    // whisper pads a window that ends in silence by replaying its last phrase. Only blocks of
-    // at least MIN_LOOP_PHRASE words are collapsed, so genuine short repeats ("very very") are
-    // left alone. Loops until stable, so "X X X" collapses fully.
+    // whisper pads a clip that ends in silence by replaying its last phrase. Only blocks of at
+    // least MIN_LOOP_PHRASE words are collapsed, so genuine short repeats ("very very") survive.
     private fun collapseTrailingRepeat(words: List<Word>): List<Word> {
         val result = words.toMutableList()
         var changed = true
@@ -279,9 +323,8 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         return result
     }
 
-    // A whisper greedy-decode loop shows up as a window with many words but very few distinct
-    // ones (e.g. "ok ok ok ok…" or "the cat the cat the cat"). Real speech is far more varied,
-    // so a low distinct-word ratio over enough words flags a hallucinated repetition.
+    // A whisper greedy-decode loop shows up as many words but very few distinct ones (e.g.
+    // "ok ok ok…"). Real speech is far more varied, so a low distinct-word ratio flags a loop.
     private fun isRepetitionLoop(windowWords: List<Word>): Boolean {
         if (windowWords.size < MIN_WORDS_FOR_LOOP_CHECK) {
             return false
@@ -293,6 +336,8 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
         val diversity = normalized.distinct().size.toFloat() / normalized.size
         return diversity < MIN_WORD_DIVERSITY
     }
+
+    private fun samplesToMs(samples: Int) = samples.toLong() * MS_PER_SECOND / TARGET_RATE
 
     private fun currentText() = words.joinToString("") { it.text }.trim()
 

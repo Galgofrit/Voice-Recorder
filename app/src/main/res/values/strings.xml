@@ -37,6 +37,7 @@
     <string name="auto_transcribe">Transcribe recordings automatically</string>
     <string name="auto_transcribe_summary">Convert speech to text on the device after each recording. Fully offline.</string>
     <string name="transcribe">Transcribe</string>
+    <string name="re_transcribe">Re-transcribe</string>
     <string name="transcribing">Transcribing…</string>
     <string name="transcription_failed">Transcription failed</string>
     <string name="no_transcript_yet">No transcript yet</string>

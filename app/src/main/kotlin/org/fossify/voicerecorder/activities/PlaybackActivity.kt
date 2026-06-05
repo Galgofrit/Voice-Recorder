@@ -11,11 +11,13 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.text.Spannable
+import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
 import android.text.method.LinkMovementMethod
 import android.text.style.BackgroundColorSpan
 import android.text.style.ClickableSpan
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.SeekBar
 import androidx.core.graphics.ColorUtils
@@ -44,6 +46,7 @@ import org.fossify.voicerecorder.databases.TranscriptDatabase
 import org.fossify.voicerecorder.databinding.ActivityPlaybackBinding
 import org.fossify.voicerecorder.dialogs.DeleteConfirmationDialog
 import org.fossify.voicerecorder.dialogs.RenameRecordingDialog
+import org.fossify.voicerecorder.dialogs.TranscribeLanguageDialog
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteRecordings
 import org.fossify.voicerecorder.extensions.trashRecordings
@@ -156,6 +159,7 @@ class PlaybackActivity : SimpleActivity() {
         binding.playbackToolbar.setOnClickListener { renameRecording() }
         binding.playbackToolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.cab_transcribe -> showTranscribeLanguageDialog()
                 R.id.cab_rename -> renameRecording()
                 R.id.cab_share -> sharePathsIntent(arrayListOf(recordingPath), BuildConfig.APPLICATION_ID)
                 R.id.cab_delete -> askConfirmDelete()
@@ -168,6 +172,7 @@ class PlaybackActivity : SimpleActivity() {
             }
             true
         }
+        colorOverflowMenu()
 
         binding.playPauseBtn.setOnClickListener { togglePlayPause() }
         binding.replayBtn.setOnClickListener { skip(forward = false) }
@@ -188,14 +193,24 @@ class PlaybackActivity : SimpleActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
         })
 
-        binding.transcribeButton.setOnClickListener {
-            TranscriptionWorker.enqueue(this, recordingPath.toUri(), recordingTitle)
-            binding.transcribeButton.beGoneIf(true)
-            binding.transcriptView.text = getString(R.string.transcribing)
-        }
+        binding.transcribeButton.setOnClickListener { showTranscribeLanguageDialog() }
 
         setupTabs()
         setupWaveform()
+    }
+
+    // setupTopAppBar themes the bar but not the overflow popup's item text, which renders
+    // unreadable on light themes. Colour each menu title with the theme's proper text colour.
+    private fun colorOverflowMenu() {
+        val color = getProperTextColor()
+        val menu = binding.playbackToolbar.menu
+        for (i in 0 until menu.size()) {
+            val item = menu.getItem(i)
+            val title = item.title ?: continue
+            item.title = SpannableString(title).apply {
+                setSpan(ForegroundColorSpan(color), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
     }
 
     private fun setupTabs() {
@@ -521,6 +536,14 @@ class PlaybackActivity : SimpleActivity() {
         }
     }
 
+    // Lets the user (re-)transcribe this recording in a chosen language, defaulting to the
+    // configured transcription language. Picks per-job without changing the global setting.
+    private fun showTranscribeLanguageDialog() {
+        TranscribeLanguageDialog(this, config.transcriptionLanguage) { language ->
+            TranscriptionWorker.enqueue(this, recordingPath.toUri(), recordingTitle, language)
+        }
+    }
+
     private fun loadTranscript() {
         ensureBackgroundThread {
             val transcript = TranscriptDatabase.getInstance(this)
@@ -533,6 +556,12 @@ class PlaybackActivity : SimpleActivity() {
     private fun updateTranscriptUi(transcript: Transcript?) {
         stopWordTimer()
         clearWordState()
+
+        // Most recordings are already transcribed (auto/live), so the action is usually a redo.
+        binding.playbackToolbar.menu.findItem(R.id.cab_transcribe)?.setTitle(
+            if (transcript?.status == TRANSCRIPT_DONE) R.string.re_transcribe else R.string.transcribe
+        )
+        colorOverflowMenu()
 
         val showLanguage = transcript?.status == TRANSCRIPT_DONE && transcript.language.isNotBlank()
         binding.transcriptLanguage.beVisibleIf(showLanguage)

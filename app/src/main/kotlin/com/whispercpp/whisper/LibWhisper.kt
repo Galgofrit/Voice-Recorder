@@ -209,13 +209,14 @@ class WhisperVadContext private constructor(private var ptr: Long) {
         Executors.newSingleThreadExecutor().asCoroutineDispatcher()
     )
 
-    // {startSample, endSample} of the speech span within [data], or {-1, -1} if no speech.
-    // Falls back to the full clip if the VAD context failed to load.
-    suspend fun speechBounds(data: FloatArray): IntArray = withContext(scope.coroutineContext) {
+    // Detected speech segments as flat sample-index pairs {start0, end0, start1, end1, ...}.
+    // Empty array means no speech. Falls back to one segment spanning the whole clip if the
+    // VAD context failed to load.
+    suspend fun segments(data: FloatArray): IntArray = withContext(scope.coroutineContext) {
         if (ptr == 0L) {
             return@withContext intArrayOf(0, data.size)
         }
-        WhisperLib.vadSpeechBounds(ptr, data)
+        WhisperLib.vadSegments(ptr, data)
     }
 
     suspend fun release() = withContext(scope.coroutineContext) {
@@ -306,7 +307,7 @@ private class WhisperLib {
         external fun benchMemcpy(nthread: Int): String
         external fun benchGgmlMulMat(nthread: Int): String
         external fun vadInitContext(modelPath: String, numThreads: Int): Long
-        external fun vadSpeechBounds(vadPtr: Long, audioData: FloatArray): IntArray
+        external fun vadSegments(vadPtr: Long, audioData: FloatArray): IntArray
         external fun vadFreeContext(vadPtr: Long)
     }
 }

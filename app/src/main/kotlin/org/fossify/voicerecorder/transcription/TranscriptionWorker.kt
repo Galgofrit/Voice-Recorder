@@ -49,7 +49,8 @@ class TranscriptionWorker(
             check(audio.isNotEmpty()) { "Decoded audio is empty" }
 
             val whisper = TranscriptionEngine.getContext(applicationContext)
-            val language = applicationContext.config.transcriptionLanguage
+            val language = inputData.getString(KEY_LANGUAGE)?.takeIf { it.isNotEmpty() }
+                ?: applicationContext.config.transcriptionLanguage
             val result = whisper.transcribeWithWords(audio, language = language)
             val words = result.words.map { Word(it.text, it.startMs, it.endMs) }
 
@@ -71,10 +72,19 @@ class TranscriptionWorker(
         private const val TAG = "TranscriptionWorker"
         const val KEY_URI = "uri"
         const val KEY_NAME = "name"
+        const val KEY_LANGUAGE = "language"
 
-        fun enqueue(context: Context, uri: Uri, recordingName: String) {
+        // [language] is a whisper language code for this job; null falls back to the configured
+        // default (used by auto-transcribe). The on-demand "Transcribe" action passes a choice.
+        fun enqueue(context: Context, uri: Uri, recordingName: String, language: String? = null) {
             val request = OneTimeWorkRequestBuilder<TranscriptionWorker>()
-                .setInputData(workDataOf(KEY_URI to uri.toString(), KEY_NAME to recordingName))
+                .setInputData(
+                    workDataOf(
+                        KEY_URI to uri.toString(),
+                        KEY_NAME to recordingName,
+                        KEY_LANGUAGE to language.orEmpty(),
+                    )
+                )
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "transcribe_$recordingName",

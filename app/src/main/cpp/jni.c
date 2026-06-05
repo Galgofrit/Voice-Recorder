@@ -198,6 +198,16 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
     // matters more than perfecting an occasional rough segment, so we take one greedy pass.
     params.temperature_inc = 0.0f;
 
+    // Cap tokens per segment so a hallucinated repetition loop can't run the decoder away (the
+    // "…X X X…x30" case that took 9s). ~25 tokens/s is several times faster than real speech,
+    // so this never truncates genuine content for our short clips, but it bounds both the time
+    // and the loop length — leaving enough repetitions for the loop guard to recognize it.
+    long max_toks = (long) audio_data_length * 25 / 16000;
+    if (max_toks < 96) {
+        max_toks = 96;
+    }
+    params.max_tokens = (int) max_toks;
+
     // Only encode as much audio context as the clip actually contains, instead of always
     // encoding a full 30s window (1500 frames @ 50/s for 16kHz). Short live chunks then
     // transcribe several times faster, with no quality loss (we'd otherwise just be
@@ -361,14 +371,15 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadInitContext(
     return (jlong) vctx;
 }
 
-// Returns {startSample, endSample} spanning from the first detected speech segment to the
-// last (16kHz sample indices into the input), or {-1, -1} if no speech is found. The caller
-// trims the window to this range so whisper never sees the silent head/tail that makes it
-// replay phrases. VAD segment times are centiseconds; cs/100*sample_rate -> samples.
+// Returns the detected speech segments as flat 16kHz sample-index pairs
+// {start0, end0, start1, end1, ...}, or an empty array if no speech. The caller uses the gaps
+// between segments to pick safe (in-silence) cut points. VAD segment times are centiseconds;
+// cs/100*sample_rate -> samples. Capped at MAX_VAD_SEGMENTS to bound the JNI copy.
 JNIEXPORT jintArray JNICALL
-Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadSpeechBounds(
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadSegments(
         JNIEnv *env, jobject thiz, jlong vad_ptr, jfloatArray audio_data) {
     UNUSED(thiz);
+    const int MAX_VAD_SEGMENTS = 64;
     struct whisper_vad_context *vctx = (struct whisper_vad_context *) vad_ptr;
     jfloat *samples = (*env)->GetFloatArrayElements(env, audio_data, NULL);
     const jsize n = (*env)->GetArrayLength(env, audio_data);
@@ -376,25 +387,27 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_vadSpeechBounds(
     struct whisper_vad_params vparams = whisper_vad_default_params();
     struct whisper_vad_segments *segs =
             whisper_vad_segments_from_samples(vctx, vparams, samples, n);
-    const int n_segs = segs ? whisper_vad_segments_n_segments(segs) : 0;
+    int n_segs = segs ? whisper_vad_segments_n_segments(segs) : 0;
+    if (n_segs > MAX_VAD_SEGMENTS) {
+        n_segs = MAX_VAD_SEGMENTS;
+    }
 
-    jint bounds[2];
-    if (n_segs > 0) {
-        const float t0_cs = whisper_vad_segments_get_segment_t0(segs, 0);
-        const float t1_cs = whisper_vad_segments_get_segment_t1(segs, n_segs - 1);
-        bounds[0] = (jint) (t0_cs / 100.0 * WHISPER_SAMPLE_RATE);
-        bounds[1] = (jint) (t1_cs / 100.0 * WHISPER_SAMPLE_RATE);
-    } else {
-        bounds[0] = -1;
-        bounds[1] = -1;
+    jint pairs[MAX_VAD_SEGMENTS * 2];
+    for (int i = 0; i < n_segs; i++) {
+        const float t0_cs = whisper_vad_segments_get_segment_t0(segs, i);
+        const float t1_cs = whisper_vad_segments_get_segment_t1(segs, i);
+        pairs[2 * i] = (jint) (t0_cs / 100.0 * WHISPER_SAMPLE_RATE);
+        pairs[2 * i + 1] = (jint) (t1_cs / 100.0 * WHISPER_SAMPLE_RATE);
     }
     if (segs) {
         whisper_vad_free_segments(segs);
     }
     (*env)->ReleaseFloatArrayElements(env, audio_data, samples, JNI_ABORT);
 
-    jintArray out = (*env)->NewIntArray(env, 2);
-    (*env)->SetIntArrayRegion(env, out, 0, 2, bounds);
+    jintArray out = (*env)->NewIntArray(env, n_segs * 2);
+    if (n_segs > 0) {
+        (*env)->SetIntArrayRegion(env, out, 0, n_segs * 2, pairs);
+    }
     return out;
 }
 
