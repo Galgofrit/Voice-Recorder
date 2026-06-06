@@ -406,6 +406,22 @@ class PlaybackActivity : SimpleActivity() {
         val cardColor = ColorUtils.blendARGB(backgroundColor, textColor, CARD_TINT_RATIO)
 
         binding.playbackCoordinator.setBackgroundColor(backgroundColor)
+        // Title bar blends into the screen rather than using a distinct (primary) color; its
+        // title/icons must then take the theme's text color to stay legible on any background.
+        binding.playbackAppbar.setBackgroundColor(backgroundColor)
+        binding.playbackToolbar.apply {
+            setBackgroundColor(backgroundColor)
+            setTitleTextColor(textColor)
+            navigationIcon?.setTint(textColor)
+            overflowIcon?.setTint(textColor)
+            for (i in 0 until menu.size()) {
+                menu.getItem(i).icon?.setTint(textColor)
+            }
+            // Drop the title's font padding so it sits centered with the back/menu icons.
+            for (i in 0 until childCount) {
+                (getChildAt(i) as? android.widget.TextView)?.includeFontPadding = false
+            }
+        }
         binding.playbackCard.setCardBackgroundColor(cardColor)
         binding.playbackTabs.setBackgroundColor(cardColor)
         binding.playbackTabs.setTabTextColors(textColor, primaryColor)
@@ -440,7 +456,8 @@ class PlaybackActivity : SimpleActivity() {
             setOnPreparedListener {
                 applyPlaybackSpeed()
                 initWaveform()
-                resumePlayback()
+                // Open paused — the user taps play to start.
+                binding.playPauseBtn.setImageResource(org.fossify.commons.R.drawable.ic_play_vector)
             }
 
             try {
