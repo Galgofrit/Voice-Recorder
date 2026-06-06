@@ -11,9 +11,9 @@
     <dimen name="player_controls_padding_vertical">28dp</dimen>
 
     <!-- Recordings list cards & month headers -->
-    <dimen name="list_card_margin_horizontal">12dp</dimen>
-    <dimen name="list_card_margin_vertical">5dp</dimen>
-    <dimen name="list_card_corner">16dp</dimen>
+    <dimen name="list_card_margin_horizontal">16dp</dimen>
+    <dimen name="list_card_margin_vertical">4dp</dimen>
+    <dimen name="list_card_corner">24dp</dimen>
 
     <!-- One-tap record FAB on the recordings list -->
     <dimen name="record_fab_size">100dp</dimen>

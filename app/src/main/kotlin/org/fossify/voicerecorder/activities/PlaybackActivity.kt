@@ -411,7 +411,7 @@ class PlaybackActivity : SimpleActivity() {
         binding.playbackTabs.setTabTextColors(textColor, primaryColor)
         binding.playbackTabs.setSelectedTabIndicatorColor(primaryColor)
 
-        binding.playPauseBtn.background.setTint(config.recordingAccentColor)
+        binding.playPauseBtn.background.setTint(primaryColor)
         binding.replayBtn.applyColorFilter(textColor)
         binding.forwardBtn.applyColorFilter(textColor)
     }

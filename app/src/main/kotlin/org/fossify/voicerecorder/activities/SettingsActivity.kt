@@ -40,6 +40,7 @@ import org.fossify.voicerecorder.extensions.hasRecordings
 import org.fossify.voicerecorder.extensions.launchFolderPicker
 import org.fossify.voicerecorder.helpers.BITRATES
 import org.fossify.voicerecorder.helpers.DEFAULT_BITRATE
+import org.fossify.voicerecorder.helpers.FONT_SCALE_SETTINGS
 import org.fossify.voicerecorder.helpers.DEFAULT_SAMPLING_RATE
 import org.fossify.voicerecorder.helpers.EXTENSION_M4A
 import org.fossify.voicerecorder.helpers.EXTENSION_MP3
@@ -65,6 +66,9 @@ class SettingsActivity : SimpleActivity() {
         setupEdgeToEdge(padBottomSystem = listOf(binding.settingsNestedScrollview))
         setupMaterialScrollListener(binding.settingsNestedScrollview, binding.settingsAppbar)
     }
+
+    // The config menu reads a bit larger than the rest of the app.
+    override fun extraFontScale() = FONT_SCALE_SETTINGS
 
     override fun onResume() {
         super.onResume()

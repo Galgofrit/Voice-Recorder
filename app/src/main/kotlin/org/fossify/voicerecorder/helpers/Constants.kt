@@ -109,10 +109,15 @@ const val TRANSCRIPTION_CHUNK_SECONDS = "transcription_chunk_seconds"
 const val PLAYBACK_SPEED = "playback_speed"
 const val RECORDING_ACCENT_COLOR = "recording_accent_color"
 
-// Font-scale multipliers applied globally per commons font-size setting (medium = 1.0).
-const val FONT_SCALE_SMALL = 0.85f
+// Font-scale multipliers applied globally per commons font-size setting (medium = original).
+const val FONT_SCALE_SMALL = 0.9f
+const val FONT_SCALE_MEDIUM = 1f
 const val FONT_SCALE_LARGE = 1.2f
 const val FONT_SCALE_EXTRA_LARGE = 1.4f
+
+// Extra boost applied only on the Settings screen, so the config menu reads a bit larger
+// than the rest of the app (which stays at the user's chosen size).
+const val FONT_SCALE_SETTINGS = 1.15f
 
 const val DEFAULT_RECORDINGS_FOLDER = "Recordings"
 const val DEFAULT_FILENAME_PATTERN = "%Y%M%D_%h%m%s"

@@ -5,6 +5,10 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.provider.MediaStore
+import android.view.Gravity
+import android.view.View
+import android.widget.EditText
+import android.widget.FrameLayout
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.appLaunched
@@ -51,6 +55,10 @@ class MainActivity : SimpleActivity() {
     private var bus: EventBus? = null
     private var currentScreen = Screen.LIST
     private var initialized = false
+
+    // Font size is applied at attachBaseContext; if it changed elsewhere (Settings) while we
+    // were in the back stack, recreate so the new scale takes effect without an app restart.
+    private var lastFontSize = -1
 
     // The custom name the user typed for the in-progress recording (if any). It is
     // applied to the file once it's saved.
@@ -105,7 +113,13 @@ class MainActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (lastFontSize != -1 && lastFontSize != config.fontSize) {
+            recreate()
+            return
+        }
+        lastFontSize = config.fontSize
         binding.mainMenu.updateColors()
+        centerSearchField()
         setupTopAppBar(binding.recorderFragment.recorderAppbar, NavigationIcon.None)
         refreshMenuItems()
         setupRecordFab()
@@ -242,6 +256,22 @@ class MainActivity : SimpleActivity() {
             Screen.LIST
         }
         showScreen(startScreen)
+    }
+
+    // The commons search bar's "Search" text sits high — the field's font padding pushes the
+    // hint up. Drop the font padding and center it (no-ops if commons' structure differs).
+    private fun centerSearchField() {
+        val container = binding.mainMenu.findViewById<View>(org.fossify.commons.R.id.toolbar_container)
+        (container?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+            if (params.gravity != Gravity.CENTER_VERTICAL) {
+                params.gravity = Gravity.CENTER_VERTICAL
+                container.layoutParams = params
+            }
+        }
+        binding.mainMenu.findViewById<EditText>(org.fossify.commons.R.id.top_toolbar_search)?.apply {
+            includeFontPadding = false
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        }
     }
 
     private fun setupRecordFab() {
