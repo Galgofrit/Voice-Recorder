@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.graphics.ColorUtils
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -19,6 +18,7 @@ import org.fossify.commons.views.MyRecyclerView
 import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.activities.SimpleActivity
 import org.fossify.voicerecorder.databinding.ItemRecordingBinding
+import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.deleteRecordings
 import org.fossify.voicerecorder.extensions.restoreRecordings
 import org.fossify.voicerecorder.interfaces.RefreshRecordingsListener
@@ -173,9 +173,7 @@ class TrashAdapter(
     private fun setupView(view: View, recording: Recording) {
         ItemRecordingBinding.bind(view).apply {
             itemHolder.setupViewBackground(activity)
-            recordingFrame.setCardBackgroundColor(
-                ColorUtils.blendARGB(activity.getProperBackgroundColor(), textColor, CARD_TINT_RATIO)
-            )
+            recordingFrame.setCardBackgroundColor(activity.cardSurfaceColor())
             itemHolder.isSelected = selectedKeys.contains(recording.id)
 
             // Trash has no inline player; hide the play button and seekbar.
@@ -199,8 +197,4 @@ class TrashAdapter(
     }
 
     override fun onChange(position: Int) = recordings.getOrNull(position)?.title ?: ""
-
-    companion object {
-        private const val CARD_TINT_RATIO = 0.08f
-    }
 }

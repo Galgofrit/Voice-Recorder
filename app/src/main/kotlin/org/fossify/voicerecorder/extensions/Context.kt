@@ -29,6 +29,7 @@ import org.fossify.commons.helpers.isRPlus
 import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.helpers.Config
 import org.fossify.voicerecorder.helpers.DEFAULT_RECORDINGS_FOLDER
+import org.fossify.voicerecorder.helpers.DURATION_CACHE_PREFS
 import org.fossify.voicerecorder.helpers.IS_RECORDING
 import org.fossify.voicerecorder.helpers.MyWidgetRecordDisplayProvider
 import org.fossify.voicerecorder.helpers.TOGGLE_WIDGET_UI
@@ -124,6 +125,18 @@ fun Context.getAllRecordings(trashed: Boolean = false): ArrayList<Recording> {
     }
 }
 
+// Reads a single recording by its uri — used to show a just-saved recording instantly,
+// without re-listing (and re-reading metadata for) the whole folder.
+fun Context.getRecording(uri: Uri): Recording? {
+    return try {
+        DocumentFile.fromSingleUri(this, uri)
+            ?.takeIf { it.exists() && it.name != null }
+            ?.let { readRecordingFromFile(it) }
+    } catch (@Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception) {
+        null
+    }
+}
+
 private fun Context.getRecordings(trashed: Boolean = false): ArrayList<Recording> {
     val recordings = ArrayList<Recording>()
     val folder = if (trashed) trashFolder else config.saveRecordingsFolder
@@ -175,8 +188,10 @@ private fun Context.getLegacyRecordings(trashed: Boolean = false): ArrayList<Rec
         val title = it.name
         val path = it.absolutePath
         val timestamp = it.lastModified()
-        val duration = getDuration(it.absolutePath) ?: 0
         val size = it.length().toInt()
+        val duration = cachedDuration(path, "$size|$timestamp") {
+            (getDuration(it.absolutePath) ?: 0).toLong()
+        }.toInt()
         recordings.add(
             Recording(
                 id = id,
@@ -196,8 +211,8 @@ private fun Context.readRecordingFromFile(file: DocumentFile): Recording {
     val title = file.name!!
     val path = file.uri.toString()
     val timestamp = file.lastModified()
-    val duration = getDurationFromUri(file.uri)
     val size = file.length().toInt()
+    val duration = cachedDuration(path, "$size|$timestamp") { getDurationFromUri(file.uri) }
     return Recording(
         id = id,
         title = title,
@@ -217,6 +232,21 @@ private fun Context.getDurationFromUri(uri: Uri): Long {
     } catch (e: Exception) {
         0L
     }
+}
+
+// Reading a recording's duration means opening and parsing the media file, which is by far the
+// slowest part of listing recordings. Cache it persistently, keyed by the file plus a signature
+// (size + last-modified) so a file that actually changes is re-read but unchanged ones are not.
+private fun Context.cachedDuration(key: String, signature: String, compute: () -> Long): Long {
+    val prefs = getSharedPreferences(DURATION_CACHE_PREFS, Context.MODE_PRIVATE)
+    val cacheKey = "$key|$signature"
+    val cached = prefs.getLong(cacheKey, -1L)
+    if (cached >= 0L) {
+        return cached
+    }
+    val computed = compute()
+    prefs.edit().putLong(cacheKey, computed).apply()
+    return computed
 }
 
 // Based on common's `Context.createSAFFileSdk30` extension

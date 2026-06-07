@@ -6,17 +6,16 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.provider.MediaStore
 import android.view.Gravity
-import android.view.View
 import android.widget.EditText
-import android.widget.FrameLayout
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.appLaunched
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkAppSideloading
 import org.fossify.commons.extensions.getAlertDialogBuilder
-import org.fossify.commons.extensions.getContrastColor
+import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hideKeyboard
 import org.fossify.commons.extensions.isAValidFilename
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
@@ -38,6 +37,7 @@ import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.databinding.ActivityMainBinding
 import org.fossify.voicerecorder.databinding.DialogRenameRecordingBinding
 import org.fossify.voicerecorder.extensions.config
+import org.fossify.voicerecorder.extensions.darkenForRecordDot
 import org.fossify.voicerecorder.extensions.deleteExpiredTrashedRecordings
 import org.fossify.voicerecorder.extensions.ensureStoragePermission
 import org.fossify.voicerecorder.extensions.renameRecording
@@ -56,9 +56,10 @@ class MainActivity : SimpleActivity() {
     private var currentScreen = Screen.LIST
     private var initialized = false
 
-    // Font size is applied at attachBaseContext; if it changed elsewhere (Settings) while we
-    // were in the back stack, recreate so the new scale takes effect without an app restart.
+    // Font size is applied at attachBaseContext; if it (or the theme) changed elsewhere
+    // (Settings) while we were in the back stack, recreate so it takes effect without a restart.
     private var lastFontSize = -1
+    private var lastBackgroundColor = 0
 
     // The custom name the user typed for the in-progress recording (if any). It is
     // applied to the file once it's saved.
@@ -113,14 +114,30 @@ class MainActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (lastFontSize != -1 && lastFontSize != config.fontSize) {
+        // Re-create if the font size or theme (e.g. applying Dark Pixel in Settings) changed
+        // while we were backgrounded, so the list reflects it without an app restart.
+        val backgroundColor = getProperBackgroundColor()
+        if (lastFontSize != -1 && (lastFontSize != config.fontSize || lastBackgroundColor != backgroundColor)) {
             recreate()
             return
         }
         lastFontSize = config.fontSize
+        lastBackgroundColor = backgroundColor
         binding.mainMenu.updateColors()
         centerSearchField()
-        setupTopAppBar(binding.recorderFragment.recorderAppbar, NavigationIcon.None)
+        // Pass the background color explicitly. setupTopAppBar's default (getRequiredTopBarColor)
+        // resolves to a light material color under the Dark Pixel theme and feeds it to
+        // setSystemBarsAppearance, which then sets light-status-bar icons — making the clock/
+        // battery dark and invisible against the dark background. Driving it from the real
+        // background color keeps the status-bar icons contrasting correctly.
+        setupTopAppBar(binding.recorderFragment.recorderAppbar, NavigationIcon.None, backgroundColor)
+        // Blend the recorder screen's header into the background, like the player/settings.
+        val textColor = getProperTextColor()
+        binding.recorderFragment.recorderAppbar.setBackgroundColor(backgroundColor)
+        binding.recorderFragment.recorderToolbar.apply {
+            setBackgroundColor(backgroundColor)
+            setTitleTextColor(textColor)
+        }
         refreshMenuItems()
         setupRecordFab()
         if (initialized) {
@@ -259,15 +276,8 @@ class MainActivity : SimpleActivity() {
     }
 
     // The commons search bar's "Search" text sits high — the field's font padding pushes the
-    // hint up. Drop the font padding and center it (no-ops if commons' structure differs).
+    // hint up. Dropping the font padding centers it (no-op if commons' structure differs).
     private fun centerSearchField() {
-        val container = binding.mainMenu.findViewById<View>(org.fossify.commons.R.id.toolbar_container)
-        (container?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
-            if (params.gravity != Gravity.CENTER_VERTICAL) {
-                params.gravity = Gravity.CENTER_VERTICAL
-                container.layoutParams = params
-            }
-        }
         binding.mainMenu.findViewById<EditText>(org.fossify.commons.R.id.top_toolbar_search)?.apply {
             includeFontPadding = false
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
@@ -278,7 +288,7 @@ class MainActivity : SimpleActivity() {
         binding.recordFab.setImageResource(R.drawable.ic_record_circle)
         val accentColor = config.recordingAccentColor
         binding.recordFab.backgroundTintList = ColorStateList.valueOf(accentColor)
-        binding.recordFab.imageTintList = ColorStateList.valueOf(accentColor.getContrastColor())
+        binding.recordFab.imageTintList = ColorStateList.valueOf(accentColor.darkenForRecordDot())
     }
 
     private fun showScreen(screen: Screen) {

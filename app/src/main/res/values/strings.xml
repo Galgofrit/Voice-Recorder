@@ -43,6 +43,9 @@
     <string name="no_transcript_yet">No transcript yet</string>
     <string name="transcription_languages">Transcription language</string>
     <string name="recording_accent">Recording accent</string>
+    <string name="card_color">Card color</string>
+    <string name="card_color_reset">Card color now follows the theme</string>
+    <string name="dark_pixel_theme">Dark Pixel theme</string>
     <string name="transcription_chunk_size">Live transcription chunk size</string>
     <string name="transcription_chunk_size_hint">Smaller chunks show the live transcript sooner, but slightly raise the chance of mistakes. 3 seconds is recommended.</string>
     <string name="seconds_short">%1$d s</string>

@@ -1,7 +1,9 @@
 package org.fossify.voicerecorder.activities
 
 import android.content.Context.RECEIVER_NOT_EXPORTED
+import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.ColorStateList
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -48,6 +50,7 @@ import org.fossify.voicerecorder.databinding.ActivityPlaybackBinding
 import org.fossify.voicerecorder.dialogs.DeleteConfirmationDialog
 import org.fossify.voicerecorder.dialogs.RenameRecordingDialog
 import org.fossify.voicerecorder.dialogs.TranscribeLanguageDialog
+import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteRecordings
 import org.fossify.voicerecorder.extensions.trashRecordings
@@ -86,7 +89,6 @@ class PlaybackActivity : SimpleActivity() {
         private const val MARKER_ALPHA = 0.4f
         private const val WAVEFORM_BARS_PER_SECOND = 12
         private const val WAVEFORM_UNPLAYED_ALPHA = 0.3f
-        private const val CARD_TINT_RATIO = 0.05f
 
         // 60% opacity (0..255) — matches the transcript language label's dimmed look.
         private const val TIMESTAMP_ALPHA = 153
@@ -403,7 +405,7 @@ class PlaybackActivity : SimpleActivity() {
         val textColor = getProperTextColor()
         // A very slight tint toward the text color, just enough to set the card apart
         // from the screen without washing out the faded (unplayed) waveform bars.
-        val cardColor = ColorUtils.blendARGB(backgroundColor, textColor, CARD_TINT_RATIO)
+        val cardColor = cardSurfaceColor()
 
         binding.playbackCoordinator.setBackgroundColor(backgroundColor)
         // Title bar blends into the screen rather than using a distinct (primary) color; its
@@ -427,7 +429,8 @@ class PlaybackActivity : SimpleActivity() {
         binding.playbackTabs.setTabTextColors(textColor, primaryColor)
         binding.playbackTabs.setSelectedTabIndicatorColor(primaryColor)
 
-        binding.playPauseBtn.background.setTint(primaryColor)
+        binding.playPauseBtn.background.setTint(cardColor)
+        binding.playPauseBtn.imageTintList = ColorStateList.valueOf(textColor)
         binding.replayBtn.applyColorFilter(textColor)
         binding.forwardBtn.applyColorFilter(textColor)
     }

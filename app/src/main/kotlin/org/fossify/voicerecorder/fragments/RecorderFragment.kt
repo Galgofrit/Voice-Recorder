@@ -3,11 +3,11 @@ package org.fossify.voicerecorder.fragments
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
-import androidx.core.graphics.ColorUtils
 import com.google.android.material.tabs.TabLayout
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.compose.extensions.getActivity
@@ -16,7 +16,6 @@ import org.fossify.commons.dialogs.PermissionRequiredDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getColoredDrawableWithColor
-import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getFormattedDuration
 import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
@@ -26,9 +25,11 @@ import org.fossify.commons.extensions.setDebouncedClickListener
 import org.fossify.commons.extensions.toast
 import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.databinding.FragmentRecorderBinding
+import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.ensureStoragePermission
 import org.fossify.voicerecorder.extensions.setKeepScreenAwake
+import org.fossify.voicerecorder.extensions.darkenForRecordDot
 import org.fossify.voicerecorder.helpers.CANCEL_RECORDING
 import org.fossify.voicerecorder.helpers.GET_RECORDER_INFO
 import org.fossify.voicerecorder.helpers.RECORDING_PAUSED
@@ -47,8 +48,6 @@ class RecorderFragment(
 ) : MyViewPagerFragment(context, attributeSet) {
 
     companion object {
-        // Matches PlaybackActivity so the recorder card has the same tint as the player.
-        private const val CARD_TINT_RATIO = 0.05f
         private const val TRANSFORM_DURATION_MS = 300L
         private const val RECORD_FADE_SCALE = 0.2f
     }
@@ -123,6 +122,7 @@ class RecorderFragment(
     private fun setupColors() {
         val properTextColor = context.getProperTextColor()
         val properPrimaryColor = context.getProperPrimaryColor()
+        val cardColor = context.cardSurfaceColor()
         val accentColor = context.config.recordingAccentColor
         binding.toggleRecordingButton.apply {
             setImageDrawable(getToggleButtonIcon())
@@ -135,10 +135,21 @@ class RecorderFragment(
         binding.recorderTabs.setTabTextColors(properTextColor, properPrimaryColor)
         binding.recorderTabs.setSelectedTabIndicatorColor(properPrimaryColor)
 
-        val cardColor = ColorUtils.blendARGB(
-            context.getProperBackgroundColor(), properTextColor, CARD_TINT_RATIO
-        )
         binding.recorderCard.setCardBackgroundColor(cardColor)
+        // The tab strip shares the card's surface color (like the player) so it blends into the
+        // box instead of showing the default, mismatched TabLayout background.
+        binding.recorderTabs.setBackgroundColor(cardColor)
+
+        // Pause/Stop mirror the player's play/pause button: a card-surface fill with a text-color
+        // label + icon. That stays legible on every theme — the default Material accent fill did
+        // not (e.g. white-on-white / low-contrast on the Dark Pixel and Material You themes).
+        val foreground = ColorStateList.valueOf(properTextColor)
+        val fill = ColorStateList.valueOf(cardColor)
+        listOf(binding.pauseButton, binding.stopButton).forEach { button ->
+            button.backgroundTintList = fill
+            button.setTextColor(properTextColor)
+            button.iconTint = foreground
+        }
     }
 
     private fun setupTabs() {
@@ -161,7 +172,7 @@ class RecorderFragment(
 
     private fun getToggleButtonIcon(): Drawable = resources.getColoredDrawableWithColor(
         drawableId = R.drawable.ic_record_circle,
-        color = context.config.recordingAccentColor.getContrastColor()
+        color = context.config.recordingAccentColor.darkenForRecordDot()
     )
 
     private fun startRecordingFromUi() {

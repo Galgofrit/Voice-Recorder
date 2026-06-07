@@ -1,6 +1,7 @@
 package org.fossify.voicerecorder.activities
 
 import android.content.Intent
+import android.graphics.Color
 import android.media.MediaRecorder
 import android.os.Bundle
 import android.widget.SeekBar
@@ -14,7 +15,9 @@ import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.formatSize
+import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.humanizePath
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
@@ -33,6 +36,7 @@ import org.fossify.voicerecorder.R
 import org.fossify.voicerecorder.databinding.ActivitySettingsBinding
 import org.fossify.voicerecorder.dialogs.FilenamePatternDialog
 import org.fossify.voicerecorder.dialogs.MoveRecordingsDialog
+import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteTrashedRecordings
 import org.fossify.voicerecorder.extensions.getAllRecordings
@@ -78,6 +82,8 @@ class SettingsActivity : SimpleActivity() {
         setupCustomizeWidgetColors()
         setupFontSize()
         setupRecordingAccentColor()
+        setupCardColor()
+        setupDarkPixelTheme()
         setupUseEnglish()
         setupLanguage()
         setupChangeDateTimeFormat()
@@ -105,6 +111,19 @@ class SettingsActivity : SimpleActivity() {
             binding.settingsRecycleBinLabel
         ).forEach {
             it.setTextColor(getProperPrimaryColor())
+        }
+
+        // Title bar blends into the screen (matches the player), with legible title/icons.
+        val backgroundColor = getProperBackgroundColor()
+        val textColor = getProperTextColor()
+        binding.settingsAppbar.setBackgroundColor(backgroundColor)
+        binding.settingsToolbar.apply {
+            setBackgroundColor(backgroundColor)
+            setTitleTextColor(textColor)
+            navigationIcon?.setTint(textColor)
+            for (i in 0 until childCount) {
+                (getChildAt(i) as? android.widget.TextView)?.includeFontPadding = false
+            }
         }
     }
 
@@ -141,6 +160,25 @@ class SettingsActivity : SimpleActivity() {
         }
     )
 
+    // Applies the Google-Recorder-style palette as custom colors (turning off Material You so
+    // they take effect). Reversible: the user can re-pick System default / other colors anytime.
+    private fun setupDarkPixelTheme() {
+        binding.settingsDarkPixelHolder.setOnClickListener {
+            config.isSystemThemeEnabled = false
+            config.isGlobalThemeEnabled = false
+            config.backgroundColor = getColor(R.color.default_pixel_background)
+            config.textColor = getColor(R.color.default_pixel_text)
+            config.primaryColor = Color.WHITE
+            config.accentColor = Color.WHITE
+            config.recordingAccentColor = getColor(R.color.default_recording_accent)
+            // Leave the card color on auto (the transparent sentinel) so it's derived from the
+            // theme's background — keeping it in sync when the colorscheme is later changed from
+            // the commons "Customize appearance" menu, instead of pinning a fixed color.
+            config.recordingCardColor = 0
+            recreate()
+        }
+    }
+
     private fun setupRecordingAccentColor() {
         binding.settingsRecordingAccentColor.applyColorFilter(config.recordingAccentColor)
         binding.settingsRecordingAccentHolder.setOnClickListener {
@@ -150,6 +188,26 @@ class SettingsActivity : SimpleActivity() {
                     binding.settingsRecordingAccentColor.applyColorFilter(color)
                 }
             }
+        }
+    }
+
+    private fun setupCardColor() {
+        binding.settingsCardColor.applyColorFilter(cardSurfaceColor())
+        binding.settingsCardColorHolder.setOnClickListener {
+            ColorPickerDialog(this, cardSurfaceColor()) { wasPositivePressed, color ->
+                if (wasPositivePressed) {
+                    config.recordingCardColor = color
+                    binding.settingsCardColor.applyColorFilter(color)
+                }
+            }
+        }
+        // Long-press clears the explicit color (back to the transparent sentinel) so the card is
+        // derived from the theme background again and tracks future colorscheme changes.
+        binding.settingsCardColorHolder.setOnLongClickListener {
+            config.recordingCardColor = 0
+            binding.settingsCardColor.applyColorFilter(cardSurfaceColor())
+            toast(R.string.card_color_reset)
+            true
         }
     }
 

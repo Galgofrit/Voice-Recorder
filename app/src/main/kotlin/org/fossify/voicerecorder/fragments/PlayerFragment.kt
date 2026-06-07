@@ -17,6 +17,7 @@ import org.fossify.voicerecorder.adapters.RecordingsAdapter
 import org.fossify.voicerecorder.databases.TranscriptDatabase
 import org.fossify.voicerecorder.databinding.FragmentPlayerBinding
 import org.fossify.voicerecorder.extensions.config
+import org.fossify.voicerecorder.extensions.getRecording
 import org.fossify.voicerecorder.interfaces.RefreshRecordingsListener
 import org.fossify.voicerecorder.models.Events
 import org.fossify.voicerecorder.models.Recording
@@ -182,6 +183,35 @@ class PlayerFragment(
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun recordingCompleted(@Suppress("UNUSED_PARAMETER") event: Events.RecordingCompleted) {
         refreshRecordings()
+    }
+
+    // Instant feedback: as soon as a recording is saved, read just that one file and prepend it,
+    // so the user sees it immediately instead of waiting for the full folder re-enumeration
+    // (which still runs via recordingCompleted to reconcile).
+    @Suppress("unused")
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun recordingSaved(event: Events.RecordingSaved) {
+        val uri = event.uri ?: return
+        ensureBackgroundThread {
+            val recording = context.getRecording(uri) ?: return@ensureBackgroundThread
+            (context as? SimpleActivity)?.runOnUiThread { prependRecording(recording) }
+        }
+    }
+
+    private fun prependRecording(recording: Recording) {
+        if (itemsIgnoringSearch.any { it.path == recording.path }) {
+            return
+        }
+        itemsIgnoringSearch = ArrayList<Recording>(itemsIgnoringSearch.size + 1).apply {
+            add(recording)
+            addAll(itemsIgnoringSearch)
+        }
+        binding.recordingsPlaceholder.beVisibleIf(false)
+        if (lastSearchQuery.isEmpty()) {
+            setupAdapter(itemsIgnoringSearch)
+        } else {
+            onSearchTextChanged(lastSearchQuery)
+        }
     }
 
     @Suppress("unused")

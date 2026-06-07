@@ -108,6 +108,15 @@ const val TRANSCRIPTION_LANGUAGE = "transcription_language"
 const val TRANSCRIPTION_CHUNK_SECONDS = "transcription_chunk_seconds"
 const val PLAYBACK_SPEED = "playback_speed"
 const val RECORDING_ACCENT_COLOR = "recording_accent_color"
+const val RECORDING_CARD_COLOR = "recording_card_color"
+
+// Auto card surface = background tinted toward the text color by this much (used when the user
+// hasn't set an explicit card color, i.e. recordingCardColor is the transparent sentinel).
+const val CARD_TINT_RATIO_AUTO = 0.08f
+
+// The record button's inner dot is the accent with its HSL lightness scaled by this (keeping
+// hue/saturation), giving a vivid dark-red center like Google Recorder rather than a greyed one.
+const val RECORD_DOT_LIGHTNESS_FACTOR = 0.34f
 
 // Font-scale multipliers applied globally per commons font-size setting (medium = original).
 const val FONT_SCALE_SMALL = 0.9f
@@ -118,6 +127,10 @@ const val FONT_SCALE_EXTRA_LARGE = 1.4f
 // Extra boost applied only on the Settings screen, so the config menu reads a bit larger
 // than the rest of the app (which stays at the user's chosen size).
 const val FONT_SCALE_SETTINGS = 1.15f
+
+// SharedPreferences file caching each recording's parsed duration (keyed by path + size +
+// last-modified), so listing recordings doesn't re-open every media file each time.
+const val DURATION_CACHE_PREFS = "duration_cache"
 
 const val DEFAULT_RECORDINGS_FOLDER = "Recordings"
 const val DEFAULT_FILENAME_PATTERN = "%Y%M%D_%h%m%s"

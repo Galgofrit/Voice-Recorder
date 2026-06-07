@@ -134,4 +134,10 @@ class Config(context: Context) : BaseConfig(context) {
             context.resources.getColor(R.color.default_recording_accent, context.theme)
         )
         set(value) = prefs.edit { putInt(RECORDING_ACCENT_COLOR, value) }
+
+    // Explicit card/surface color. The transparent default (0) means "auto" — derive it from
+    // the background (so it still adapts on Material You / other themes); see cardSurfaceColor().
+    var recordingCardColor: Int
+        get() = prefs.getInt(RECORDING_CARD_COLOR, 0)
+        set(value) = prefs.edit { putInt(RECORDING_CARD_COLOR, value) }
 }

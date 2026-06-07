@@ -2,5 +2,8 @@
 <resources>
     <color name="default_widget_bg_color">#FFF57C00</color>
     <color name="color_error">@color/md_red_500_dark</color>
-    <color name="default_recording_accent">#FFD32F2F</color>
+    <!-- Dark Pixel theme palette (modeled on Google Recorder). -->
+    <color name="default_recording_accent">#FFEE675C</color>
+    <color name="default_pixel_background">#FF0E0E0F</color>
+    <color name="default_pixel_text">#FFC2C2C3</color>
 </resources>

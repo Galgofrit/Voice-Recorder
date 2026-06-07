@@ -13,7 +13,6 @@ import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
-import androidx.core.graphics.ColorUtils
 import androidx.core.net.toUri
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
@@ -38,6 +37,7 @@ import org.fossify.voicerecorder.databinding.ItemRecordingBinding
 import org.fossify.voicerecorder.databinding.ItemRecordingSectionBinding
 import org.fossify.voicerecorder.dialogs.DeleteConfirmationDialog
 import org.fossify.voicerecorder.dialogs.RenameRecordingDialog
+import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteRecordings
 import org.fossify.voicerecorder.extensions.getRecordingDisplayTitle
@@ -466,10 +466,8 @@ class RecordingsAdapter(
         }
     }
 
-    // A subtle fill, a touch brighter than the screen on dark themes / dimmer on light
-    // themes, matching Google Recorder's borderless (no-stroke) cards.
-    private fun cardColor() =
-        ColorUtils.blendARGB(activity.getProperBackgroundColor(), textColor, CARD_TINT_RATIO)
+    // Card fill — the user's configured surface color, or an auto tint of the background.
+    private fun cardColor() = activity.cardSurfaceColor()
 
     private fun setupView(view: View, recording: Recording) {
         ItemRecordingBinding.bind(view).apply {
@@ -562,7 +560,6 @@ class RecordingsAdapter(
         private const val SNIPPET_CHARS_BEFORE = 30
         private const val SNIPPET_CHARS_AFTER = 60
         private const val MARKER_ALPHA = 0.4f
-        private const val CARD_TINT_RATIO = 0.08f
         private const val VIEW_TYPE_SECTION = 0
         private const val VIEW_TYPE_ITEM = 1
         private const val PLAYBACK_PROGRESS_INTERVAL_MS = 200L
