@@ -53,6 +53,7 @@ import org.fossify.voicerecorder.dialogs.TranscribeLanguageDialog
 import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.deleteRecordings
+import org.fossify.voicerecorder.extensions.getRecordingDisplayTitle
 import org.fossify.voicerecorder.extensions.trashRecordings
 import org.fossify.voicerecorder.helpers.WaveformCache
 import org.fossify.voicerecorder.models.Events
@@ -80,6 +81,7 @@ class PlaybackActivity : SimpleActivity() {
         const val EXTRA_PATH = "path"
         const val EXTRA_TITLE = "title"
         const val EXTRA_DURATION = "duration"
+        const val EXTRA_TIMESTAMP = "timestamp"
 
         private const val SKIP_BACK_MS = 5000
         private const val SKIP_FORWARD_MS = 10000
@@ -104,6 +106,7 @@ class PlaybackActivity : SimpleActivity() {
 
     private var recordingPath = ""
     private var recordingTitle = ""
+    private var recordingTimestamp = 0L
     private var durationSec = 0
 
     private var words: List<Word> = emptyList()
@@ -133,10 +136,13 @@ class PlaybackActivity : SimpleActivity() {
 
         recordingPath = intent.getStringExtra(EXTRA_PATH).orEmpty()
         recordingTitle = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        recordingTimestamp = intent.getLongExtra(EXTRA_TIMESTAMP, 0L)
         durationSec = intent.getIntExtra(EXTRA_DURATION, 0)
 
         setupEdgeToEdge(padBottomSystem = listOf(binding.playbackControlsWrapper))
-        binding.playbackToolbar.title = recordingTitle
+        // Show the same friendly title as the list (a date for auto-named recordings); the true
+        // filename is still used everywhere else (rename, share, transcription, waveform cache).
+        binding.playbackToolbar.title = getRecordingDisplayTitle(recordingTitle, recordingTimestamp)
 
         bus = EventBus.getDefault().apply { register(this@PlaybackActivity) }
         setupViews()
@@ -146,7 +152,10 @@ class PlaybackActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.playbackAppbar, NavigationIcon.Arrow)
+        // Pass the background color so commons sets the status-bar icon contrast from it. Its
+        // default (getRequiredTopBarColor) resolves to a light material color under Dark Pixel and
+        // would flip the status bar to dark icons — making the clock/battery vanish on the dark bg.
+        setupTopAppBar(binding.playbackAppbar, NavigationIcon.Arrow, getProperBackgroundColor())
         updateTextColors(binding.root)
         setupColors()
     }
@@ -752,7 +761,7 @@ class PlaybackActivity : SimpleActivity() {
         id = recordingPath.hashCode(),
         title = recordingTitle,
         path = recordingPath,
-        timestamp = 0L,
+        timestamp = recordingTimestamp,
         duration = durationSec,
         size = 0,
     )

@@ -40,6 +40,7 @@ import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.darkenForRecordDot
 import org.fossify.voicerecorder.extensions.deleteExpiredTrashedRecordings
 import org.fossify.voicerecorder.extensions.ensureStoragePermission
+import org.fossify.voicerecorder.extensions.getRecordingDisplayTitle
 import org.fossify.voicerecorder.extensions.renameRecording
 import org.fossify.voicerecorder.helpers.STOP_AMPLITUDE_UPDATE
 import org.fossify.voicerecorder.models.Events
@@ -64,6 +65,10 @@ class MainActivity : SimpleActivity() {
     // The custom name the user typed for the in-progress recording (if any). It is
     // applied to the file once it's saved.
     private var pendingCustomName: String? = null
+
+    // The true auto-generated base name of the in-progress recording (no extension). The top bar
+    // shows a friendly title derived from it, but rename dialogs and the saved file use this.
+    private var pendingBaseName = ""
 
     override var isSearchBarEnabled = true
 
@@ -407,12 +412,17 @@ class MainActivity : SimpleActivity() {
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun gotRecordingFilename(event: Events.RecordingFilename) {
         pendingCustomName = null
-        binding.recorderFragment.recorderToolbar.title = event.name
+        pendingBaseName = event.name
+        // Show the friendly title (a date for auto-named recordings), matching the list and player.
+        binding.recorderFragment.recorderToolbar.title =
+            getRecordingDisplayTitle(event.name, System.currentTimeMillis())
     }
 
     private fun showRenamePendingDialog() {
         val dialogBinding = DialogRenameRecordingBinding.inflate(layoutInflater).apply {
-            renameRecordingTitle.setText(binding.recorderFragment.recorderToolbar.title)
+            // Prefill the true name (custom if already set, else the auto base name) rather than
+            // the friendly title shown in the bar, so the user edits the real filename.
+            renameRecordingTitle.setText(pendingCustomName ?: pendingBaseName)
         }
 
         getAlertDialogBuilder()
@@ -435,6 +445,7 @@ class MainActivity : SimpleActivity() {
                                 toast(org.fossify.commons.R.string.invalid_name)
 
                             else -> {
+                                // After an explicit rename always show the true name the user typed.
                                 pendingCustomName = newTitle
                                 binding.recorderFragment.recorderToolbar.title = newTitle
                                 alertDialog.dismiss()

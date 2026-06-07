@@ -148,6 +148,7 @@ class PlayerFragment(
             putExtra(PlaybackActivity.EXTRA_PATH, recording.path)
             putExtra(PlaybackActivity.EXTRA_TITLE, recording.title)
             putExtra(PlaybackActivity.EXTRA_DURATION, recording.duration)
+            putExtra(PlaybackActivity.EXTRA_TIMESTAMP, recording.timestamp)
             context.startActivity(this)
         }
     }

@@ -7,6 +7,7 @@ import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
 import android.util.Log
 import androidx.core.graphics.ColorUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -113,11 +114,19 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
 
     fun start() {
         consumerJob = scope.launch {
-            for (chunk in chunks) {
-                appendChunk(chunk)
-                drainBuffer(flush = false)
+            // A transcription bug must never crash the app or disturb the recording (see the class
+            // doc). Cancellation must still propagate so finish()/cancel() work as before.
+            try {
+                for (chunk in chunks) {
+                    appendChunk(chunk)
+                    drainBuffer(flush = false)
+                }
+                drainBuffer(flush = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                Log.e(TAG, "Live transcription consumer failed", e)
             }
-            drainBuffer(flush = true)
         }
     }
 
@@ -175,16 +184,24 @@ class LiveTranscriber(private val context: Context, private val recordingName: S
             val segments = TranscriptionEngine.getVadContext(context).segments(buffer)
             val cut = decideCut(segments, buffer.size, flush) ?: return
 
+            // The VAD reports frame-aligned segment ends, which can round a few samples past the
+            // actual buffer length (the buffer isn't a whole number of frames). Clamp every cut
+            // index to the buffer so copyOfRange can never run off the end — this crashed on a
+            // quick stop, whose final flush emits a short, non-frame-aligned buffer.
+            val emitStart = cut.emitStart.coerceIn(0, buffer.size)
+            val emitEnd = cut.emitEnd.coerceIn(emitStart, buffer.size)
+            val consumeUntil = cut.consumeUntil.coerceIn(0, buffer.size)
+
             val stitch = pendingStitch
-            if (cut.emitStart < cut.emitEnd) {
+            if (emitStart < emitEnd) {
                 emit(
-                    clip = buffer.copyOfRange(cut.emitStart, cut.emitEnd),
-                    offsetMs = bufferStartMs + samplesToMs(cut.emitStart),
+                    clip = buffer.copyOfRange(emitStart, emitEnd),
+                    offsetMs = bufferStartMs + samplesToMs(emitStart),
                     stitch = stitch,
                 )
             }
-            bufferStartMs += samplesToMs(cut.consumeUntil)
-            buffer = buffer.copyOfRange(cut.consumeUntil, buffer.size)
+            bufferStartMs += samplesToMs(consumeUntil)
+            buffer = buffer.copyOfRange(consumeUntil, buffer.size)
             lastVadSamples = buffer.size
             pendingStitch = cut.forced
         }
