@@ -1,6 +1,8 @@
 package org.fossify.voicerecorder.adapters
 
 import android.annotation.SuppressLint
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
@@ -13,7 +15,11 @@ import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.card.MaterialCardView
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.extensions.adjustAlpha
@@ -85,8 +91,21 @@ class RecordingsAdapter(
     // The recordings grouped into month sections + entries; this backs the adapter.
     private var listItems = buildListItems(recordings)
 
+    // Swipe-to-trash visuals: a soft pinkish-red rounded fill (matching the card) with a trash
+    // icon painted in the screen background color, so it reads as a transparent cutout in the fill.
+    private val swipeDeleteIcon by lazy {
+        ContextCompat.getDrawable(activity, org.fossify.commons.R.drawable.ic_delete_vector)
+            ?.apply { applyColorFilter(activity.getProperBackgroundColor()) }
+    }
+    private val swipeBackgroundPaint by lazy {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ContextCompat.getColor(activity, R.color.swipe_trash_background)
+        }
+    }
+
     init {
         setupDragListener(true)
+        setupSwipeToTrash()
     }
 
     // Groups the (already newest-first) recordings under month headers.
@@ -314,6 +333,129 @@ class RecordingsAdapter(
                 notifyDataSetChanged()
             }
             finishActMode()
+        }
+    }
+
+    // Swipe a recording row (either direction) to trash it, after a confirmation. Month-section
+    // headers and rows in multi-select mode are not swipeable.
+    private fun setupSwipeToTrash() {
+        val swipeCallback = object : ItemTouchHelper.SimpleCallback(
+            0,
+            ItemTouchHelper.START or ItemTouchHelper.END
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ) = false
+
+            override fun getSwipeDirs(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder
+            ): Int {
+                val position = viewHolder.bindingAdapterPosition
+                if (listItems.getOrNull(position) !is RecordingEntry || selectedKeys.isNotEmpty()) {
+                    return 0
+                }
+                return super.getSwipeDirs(recyclerView, viewHolder)
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val position = viewHolder.bindingAdapterPosition
+                val recording = (listItems.getOrNull(position) as? RecordingEntry)?.recording
+                // Snap the row back; it's only removed once the user confirms in the dialog.
+                if (position != RecyclerView.NO_POSITION) {
+                    notifyItemChanged(position)
+                }
+                if (recording != null) {
+                    confirmSwipeTrash(recording)
+                }
+            }
+
+            @Suppress("LongParameterList")
+            override fun onChildDraw(
+                c: Canvas,
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                dX: Float,
+                dY: Float,
+                actionState: Int,
+                isCurrentlyActive: Boolean
+            ) {
+                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE && dX != 0f) {
+                    drawSwipeBackground(c, viewHolder.itemView, dX)
+                }
+                super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
+            }
+        }
+        ItemTouchHelper(swipeCallback).attachToRecyclerView(recyclerView)
+    }
+
+    private fun drawSwipeBackground(canvas: Canvas, itemView: View, dX: Float) {
+        val icon = swipeDeleteIcon ?: return
+        // Round the fill to match the card so the revealed edge has the same corners, not a
+        // hard rectangle. Drawn across the full card footprint, behind it; the sliding card
+        // reveals only the swiped-from side.
+        val corner = (itemView as? MaterialCardView)?.radius ?: 0f
+        canvas.drawRoundRect(
+            itemView.left.toFloat(),
+            itemView.top.toFloat(),
+            itemView.right.toFloat(),
+            itemView.bottom.toFloat(),
+            corner,
+            corner,
+            swipeBackgroundPaint
+        )
+
+        val iconMargin = (itemView.height - icon.intrinsicHeight) / 2
+        val iconTop = itemView.top + iconMargin
+        val iconBottom = iconTop + icon.intrinsicHeight
+        if (dX > 0) {
+            val iconLeft = itemView.left + iconMargin
+            icon.setBounds(iconLeft, iconTop, iconLeft + icon.intrinsicWidth, iconBottom)
+        } else {
+            val iconRight = itemView.right - iconMargin
+            icon.setBounds(iconRight - icon.intrinsicWidth, iconTop, iconRight, iconBottom)
+        }
+        icon.draw(canvas)
+    }
+
+    // Confirms (recycle-bin or permanent, mirroring the action-bar delete), then trashes/deletes
+    // just the swiped recording.
+    private fun confirmSwipeTrash(recording: Recording) {
+        val useRecycleBin = activity.config.useRecycleBin
+        val baseString = if (useRecycleBin) {
+            org.fossify.commons.R.string.move_to_recycle_bin_confirmation
+        } else {
+            R.string.delete_recordings_confirmation
+        }
+        val question = String.format(
+            resources.getString(baseString),
+            "\"${activity.getRecordingDisplayTitle(recording)}\""
+        )
+
+        DeleteConfirmationDialog(
+            activity = activity,
+            message = question,
+            showSkipRecycleBinOption = useRecycleBin
+        ) { skipRecycleBin ->
+            ensureBackgroundThread {
+                val toRemove = arrayListOf(recording)
+                if (!skipRecycleBin && useRecycleBin) {
+                    activity.trashRecordings(toRemove) { success ->
+                        if (success) {
+                            removeFromList(toRemove)
+                            EventBus.getDefault().post(Events.RecordingTrashUpdated())
+                        }
+                    }
+                } else {
+                    activity.deleteRecordings(toRemove) { success ->
+                        if (success) {
+                            removeFromList(toRemove)
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -2,6 +2,8 @@
 <resources>
     <color name="default_widget_bg_color">#FFF57C00</color>
     <color name="color_error">@color/md_red_500_dark</color>
+    <!-- Soft pinkish-red revealed behind a row as it's swiped toward the recycle bin. -->
+    <color name="swipe_trash_background">#FFEF9A9A</color>
     <!-- Dark Pixel theme palette (modeled on Google Recorder). -->
     <color name="default_recording_accent">#FFEE675C</color>
     <color name="default_pixel_background">#FF0E0E0F</color>
