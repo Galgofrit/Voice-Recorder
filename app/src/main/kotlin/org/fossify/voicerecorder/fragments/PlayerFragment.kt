@@ -3,6 +3,7 @@ package org.fossify.voicerecorder.fragments
 import android.content.Context
 import android.content.Intent
 import android.util.AttributeSet
+import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getProperPrimaryColor
@@ -11,11 +12,13 @@ import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isQPlus
 import org.fossify.voicerecorder.R
+import org.fossify.voicerecorder.activities.FavoritesActivity
 import org.fossify.voicerecorder.activities.PlaybackActivity
 import org.fossify.voicerecorder.activities.SimpleActivity
 import org.fossify.voicerecorder.adapters.RecordingsAdapter
 import org.fossify.voicerecorder.databases.TranscriptDatabase
 import org.fossify.voicerecorder.databinding.FragmentPlayerBinding
+import org.fossify.voicerecorder.extensions.cardSurfaceColor
 import org.fossify.voicerecorder.extensions.config
 import org.fossify.voicerecorder.extensions.getRecording
 import org.fossify.voicerecorder.interfaces.RefreshRecordingsListener
@@ -66,6 +69,9 @@ class PlayerFragment(
 
         bus = EventBus.getDefault()
         bus!!.register(this)
+        binding.favoritesCard.setOnClickListener {
+            context.startActivity(Intent(context, FavoritesActivity::class.java))
+        }
         setupColors()
         loadRecordings()
         storePrevState()
@@ -81,9 +87,9 @@ class PlayerFragment(
 
     override fun onLoadingEnd(recordings: ArrayList<Recording>) {
         binding.loadingIndicator.hide()
-        binding.recordingsPlaceholder.beVisibleIf(recordings.isEmpty())
         itemsIgnoringSearch = recordings
-        setupAdapter(itemsIgnoringSearch)
+        updateFavoritesCard()
+        applyFilter()
         loadTranscriptsForSearch()
     }
 
@@ -97,8 +103,9 @@ class PlayerFragment(
                 .associate { it.recordingName to it.text }
             (context as SimpleActivity).runOnUiThread {
                 transcriptsByName = HashMap(map)
+                // Search matches transcript text, so re-filter once transcripts are loaded.
                 if (lastSearchQuery.isNotEmpty()) {
-                    onSearchTextChanged(lastSearchQuery)
+                    applyFilter()
                 }
             }
         }
@@ -108,15 +115,12 @@ class PlayerFragment(
 
     private fun setupAdapter(recordings: ArrayList<Recording>) {
         binding.recordingsFastscroller.beVisibleIf(recordings.isNotEmpty())
+        binding.recordingsPlaceholder.beVisibleIf(recordings.isEmpty())
         if (recordings.isEmpty()) {
-            val stringId = if (lastSearchQuery.isEmpty()) {
-                if (isQPlus()) {
-                    R.string.no_recordings_found
-                } else {
-                    R.string.no_recordings_in_folder_found
-                }
-            } else {
-                org.fossify.commons.R.string.no_items_found
+            val stringId = when {
+                lastSearchQuery.isNotEmpty() -> org.fossify.commons.R.string.no_items_found
+                isQPlus() -> R.string.no_recordings_found
+                else -> R.string.no_recordings_in_folder_found
             }
 
             binding.recordingsPlaceholder.text = context.getString(stringId)
@@ -155,13 +159,31 @@ class PlayerFragment(
 
     fun onSearchTextChanged(text: String) {
         lastSearchQuery = text
-        val filtered = itemsIgnoringSearch
-            .filter {
-                it.title.contains(text, true) ||
-                    transcriptsByName[it.title]?.contains(text, true) == true
+        applyFilter()
+    }
+
+    // Filters the full recording set by the current search query (favorites live on their own
+    // screen now, reached via the Favorites card).
+    private fun applyFilter() {
+        val filtered = if (lastSearchQuery.isEmpty()) {
+            itemsIgnoringSearch
+        } else {
+            itemsIgnoringSearch.filter {
+                it.title.contains(lastSearchQuery, true) ||
+                    transcriptsByName[it.title]?.contains(lastSearchQuery, true) == true
             }
-            .toMutableList() as ArrayList<Recording>
-        setupAdapter(filtered)
+        }
+        setupAdapter(ArrayList(filtered))
+    }
+
+    // The Favorites card (a solid-star shortcut to the Favorites screen) shows only once there's
+    // at least one recording; its star + label follow the theme text color.
+    private fun updateFavoritesCard() {
+        binding.favoritesCard.beVisibleIf(itemsIgnoringSearch.isNotEmpty())
+        val tint = context.getProperTextColor()
+        binding.favoritesStar.applyColorFilter(tint)
+        binding.favoritesLabel.setTextColor(tint)
+        binding.favoritesCard.setCardBackgroundColor(context.cardSurfaceColor())
     }
 
     private fun getRecordingsAdapter() = binding.recordingsList.adapter as? RecordingsAdapter
@@ -176,6 +198,7 @@ class PlayerFragment(
         binding.recordingsFastscroller.updateColors(properPrimaryColor)
         context.updateTextColors(binding.playerHolder)
         binding.loadingIndicator.setIndicatorColor(properPrimaryColor)
+        updateFavoritesCard()
     }
 
     fun finishActMode() = getRecordingsAdapter()?.finishActMode()
@@ -207,12 +230,8 @@ class PlayerFragment(
             add(recording)
             addAll(itemsIgnoringSearch)
         }
-        binding.recordingsPlaceholder.beVisibleIf(false)
-        if (lastSearchQuery.isEmpty()) {
-            setupAdapter(itemsIgnoringSearch)
-        } else {
-            onSearchTextChanged(lastSearchQuery)
-        }
+        updateFavoritesCard()
+        applyFilter()
     }
 
     @Suppress("unused")

@@ -1,9 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
 <org.fossify.voicerecorder.fragments.PlayerFragment xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/player_holder"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
+
+    <!-- A card shortcut to the Favorites screen, styled like a recording card. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/favorites_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/list_card_margin_horizontal"
+        android:layout_marginTop="@dimen/normal_margin"
+        android:layout_marginBottom="@dimen/list_card_margin_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone"
+        app:cardCornerRadius="@dimen/list_card_corner"
+        app:cardElevation="0dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:strokeWidth="0dp"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/bigger_margin"
+            android:paddingTop="@dimen/normal_margin"
+            android:paddingEnd="@dimen/bigger_margin"
+            android:paddingBottom="@dimen/normal_margin">
+
+            <ImageView
+                android:id="@+id/favorites_star"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="@dimen/normal_margin"
+                android:contentDescription="@string/favorites"
+                android:src="@drawable/ic_star_vector" />
+
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/favorites_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/favorites"
+                android:textSize="@dimen/bigger_text_size"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/recordings_placeholder"
@@ -16,7 +66,11 @@
         android:text="@string/no_recordings_found"
         android:textSize="@dimen/bigger_text_size"
         android:textStyle="italic"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/favorites_card" />
 
     <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
         android:id="@+id/recordings_fastscroller"
@@ -25,7 +79,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@+id/favorites_card">
 
         <org.fossify.commons.views.MyRecyclerView
             android:id="@+id/recordings_list"

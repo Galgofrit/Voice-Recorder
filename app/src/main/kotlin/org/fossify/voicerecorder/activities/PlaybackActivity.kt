@@ -75,7 +75,7 @@ import java.util.Timer
 import java.util.TimerTask
 import java.util.concurrent.Executors
 
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 class PlaybackActivity : SimpleActivity() {
     companion object {
         const val EXTRA_PATH = "path"
@@ -158,6 +158,7 @@ class PlaybackActivity : SimpleActivity() {
         setupTopAppBar(binding.playbackAppbar, NavigationIcon.Arrow, getProperBackgroundColor())
         updateTextColors(binding.root)
         setupColors()
+        updateFavoriteIcon()
     }
 
     override fun onDestroy() {
@@ -184,6 +185,7 @@ class PlaybackActivity : SimpleActivity() {
                 )
 
                 R.id.playback_speed -> showPlaybackSpeedDialog()
+                R.id.cab_favorite -> toggleFavorite()
                 else -> return@setOnMenuItemClickListener false
             }
             true
@@ -765,6 +767,26 @@ class PlaybackActivity : SimpleActivity() {
         duration = durationSec,
         size = 0,
     )
+
+    private fun toggleFavorite() {
+        config.setFavoriteRecording(recordingTitle, !config.isFavoriteRecording(recordingTitle))
+        updateFavoriteIcon()
+    }
+
+    // Hollow star = not favorited, solid = favorited; tinted to match the other toolbar icons.
+    private fun updateFavoriteIcon() {
+        val item = binding.playbackToolbar.menu.findItem(R.id.cab_favorite) ?: return
+        val isFavorite = config.isFavoriteRecording(recordingTitle)
+        item.setIcon(
+            if (isFavorite) {
+                org.fossify.commons.R.drawable.ic_star_vector
+            } else {
+                org.fossify.commons.R.drawable.ic_star_outline_vector
+            }
+        )
+        item.setTitle(if (isFavorite) R.string.remove_from_favorites else R.string.add_to_favorites)
+        item.icon?.setTint(getProperTextColor())
+    }
 
     private fun renameRecording() {
         RenameRecordingDialog(this, currentRecording()) { finish() }

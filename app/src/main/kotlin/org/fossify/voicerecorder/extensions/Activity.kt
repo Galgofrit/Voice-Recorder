@@ -120,6 +120,7 @@ fun BaseSimpleActivity.renameRecording(
 // Renames carry a recording's cached waveform and saved transcript with it (both keyed by
 // filename), so neither is lost — e.g. naming a just-recorded, live-transcribed clip.
 private fun BaseSimpleActivity.moveRecordingSidecars(oldTitle: String, newName: String) {
+    config.renameFavoriteRecording(oldTitle, newName)
     WaveformCache.rename(this, oldTitle, newName)
     ensureBackgroundThread {
         val dao = TranscriptDatabase.getInstance(this).transcriptDao()

@@ -109,6 +109,7 @@ const val TRANSCRIPTION_CHUNK_SECONDS = "transcription_chunk_seconds"
 const val PLAYBACK_SPEED = "playback_speed"
 const val RECORDING_ACCENT_COLOR = "recording_accent_color"
 const val RECORDING_CARD_COLOR = "recording_card_color"
+const val FAVORITE_RECORDINGS = "favorite_recordings"
 
 // Auto card surface = background tinted toward the text color by this much (used when the user
 // hasn't set an explicit card color, i.e. recordingCardColor is the transparent sentinel).

@@ -9,6 +9,11 @@
         android:showAsAction="always"
         android:title="@string/rename" />
     <item
+        android:id="@+id/cab_toggle_favorite"
+        android:icon="@drawable/ic_star_outline_vector"
+        android:title="@string/add_to_favorites"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/cab_share"
         android:icon="@drawable/ic_share_vector"
         android:showAsAction="always"

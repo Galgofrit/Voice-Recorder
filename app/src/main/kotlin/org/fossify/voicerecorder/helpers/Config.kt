@@ -140,4 +140,22 @@ class Config(context: Context) : BaseConfig(context) {
     var recordingCardColor: Int
         get() = prefs.getInt(RECORDING_CARD_COLOR, 0)
         set(value) = prefs.edit { putInt(RECORDING_CARD_COLOR, value) }
+
+    // Favorited recordings, keyed by filename (same key transcripts use), so the mark survives
+    // restarts and follows the file on rename (see renameFavoriteRecording).
+    var favoriteRecordings: Set<String>
+        get() = prefs.getStringSet(FAVORITE_RECORDINGS, HashSet())!!
+        set(value) = prefs.edit { putStringSet(FAVORITE_RECORDINGS, value) }
+
+    fun isFavoriteRecording(title: String) = favoriteRecordings.contains(title)
+
+    fun setFavoriteRecording(title: String, favorite: Boolean) {
+        favoriteRecordings = if (favorite) favoriteRecordings + title else favoriteRecordings - title
+    }
+
+    fun renameFavoriteRecording(oldTitle: String, newTitle: String) {
+        if (isFavoriteRecording(oldTitle)) {
+            favoriteRecordings = favoriteRecordings - oldTitle + newTitle
+        }
+    }
 }

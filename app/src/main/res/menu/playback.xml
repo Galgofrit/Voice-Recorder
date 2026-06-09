@@ -4,6 +4,11 @@
     tools:ignore="AlwaysShowAction"
     xmlns:tools="http://schemas.android.com/tools">
     <item
+        android:id="@+id/cab_favorite"
+        android:icon="@drawable/ic_star_outline_vector"
+        android:title="@string/add_to_favorites"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/playback_speed"
         android:icon="@drawable/ic_graphic_eq_vector"
         android:title="@string/playback_speed"

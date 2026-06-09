@@ -1,6 +1,7 @@
 package org.fossify.voicerecorder.adapters
 
 import android.annotation.SuppressLint
+import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.media.AudioAttributes
@@ -76,6 +77,9 @@ class RecordingsAdapter(
     var transcripts: Map<String, String> = emptyMap()
     private var lastHighlight = ""
 
+    // When set (the Favorites screen), each row shows a solid star left of its title.
+    var showFavoriteStar = false
+
     // Inline mini-player: a single recording plays at a time, its row's seekbar tracking
     // progress. [playingId] is the recording currently loaded into [player].
     private var player: MediaPlayer? = null
@@ -129,6 +133,21 @@ class RecordingsAdapter(
         menu.apply {
             findItem(R.id.cab_rename).isVisible = isOneItemSelected()
             findItem(R.id.cab_open_with).isVisible = isOneItemSelected()
+
+            // "Remove from favorites" only when everything selected is already favorited.
+            val selected = getSelectedItems()
+            val allFavorited = selected.isNotEmpty() &&
+                selected.all { activity.config.isFavoriteRecording(it.title) }
+            findItem(R.id.cab_toggle_favorite).apply {
+                setTitle(if (allFavorited) R.string.remove_from_favorites else R.string.add_to_favorites)
+                setIcon(
+                    if (allFavorited) {
+                        org.fossify.commons.R.drawable.ic_star_vector
+                    } else {
+                        org.fossify.commons.R.drawable.ic_star_outline_vector
+                    }
+                )
+            }
         }
     }
 
@@ -139,12 +158,26 @@ class RecordingsAdapter(
 
         when (id) {
             R.id.cab_rename -> renameRecording()
+            R.id.cab_toggle_favorite -> toggleFavorites()
             R.id.cab_share -> shareRecordings()
             R.id.cab_delete -> askConfirmDelete()
             R.id.cab_select_all -> selectAll()
             R.id.cab_open_with -> openRecordingWith()
             R.id.cab_transcribe -> transcribeRecordings()
         }
+    }
+
+    // Favorites whatever's selected, or un-favorites it if all of it is already favorited.
+    // Re-loads the list so the favorites filter (if active) reflects the change immediately.
+    private fun toggleFavorites() {
+        val selected = getSelectedItems()
+        if (selected.isEmpty()) {
+            return
+        }
+        val makeFavorite = !selected.all { activity.config.isFavoriteRecording(it.title) }
+        selected.forEach { activity.config.setFavoriteRecording(it.title, makeFavorite) }
+        finishActMode()
+        refreshListener.refreshRecordings()
     }
 
     private fun transcribeRecordings() {
@@ -635,6 +668,18 @@ class RecordingsAdapter(
             val markerColor = primaryColor.adjustAlpha(MARKER_ALPHA)
             val displayTitle = activity.getRecordingDisplayTitle(recording)
             recordingTitle.text = highlightMatches(displayTitle, textToHighlight, markerColor)
+
+            // On the Favorites screen, mark every row with a solid star left of the title.
+            if (showFavoriteStar) {
+                recordingTitle.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                    org.fossify.commons.R.drawable.ic_star_vector, 0, 0, 0
+                )
+                recordingTitle.compoundDrawableTintList = ColorStateList.valueOf(textColor)
+                recordingTitle.compoundDrawablePadding =
+                    activity.resources.getDimensionPixelSize(org.fossify.commons.R.dimen.small_margin)
+            } else {
+                recordingTitle.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+            }
             recordingDate.text = recording.timestamp.formatDate(root.context)
             recordingDuration.text = recording.duration.getFormattedDuration()
             recordingSize.text = recording.size.formatSize()
